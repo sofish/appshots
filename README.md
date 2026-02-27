@@ -6,7 +6,7 @@
 
 Drop in screenshots + a Markdown description, get professional App Store screenshots powered by AI. Native macOS app.
 
-![AppShots — AI-generated App Store screenshot](screens/generate_result.png)
+![AppShots](screens/app_preview.png)
 
 ## What It Does
 
@@ -20,7 +20,9 @@ AppShots takes your raw app screenshots and a structured Markdown file describin
 4. **Generate** — Screenshots are sent to Gemini along with the LLM-authored prompts. Gemini composes the full App Store screenshot in one pass
 5. **Export** — Batch export in multiple device sizes as PNG or JPEG, ready for App Store Connect
 
-![AppShots workflow — 6-step pipeline](screens/app_preview.png)
+### Generated Result
+
+![Generated App Store screenshot](screens/generate_result.png)
 
 ## Requirements
 
