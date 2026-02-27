@@ -72,11 +72,17 @@ struct PlanGenerator {
             parts.append(proof)
         }
 
-        let screenCount = min(screenshotCount, desc.features.count)
+        // Use screenshot count as primary driver; fall back to features if no screenshots
+        let screenCount = screenshotCount > 0
+            ? screenshotCount
+            : max(desc.features.count, 3)
         parts.append("")
         parts.append("Number of screenshots provided: \(screenshotCount)")
         parts.append("Number of features described: \(desc.features.count)")
         parts.append("Please generate a screenshot plan with exactly \(screenCount) screens.")
+        if desc.features.isEmpty {
+            parts.append("Since no explicit features were listed, derive \(screenCount) key selling points from the app description and core pitch.")
+        }
 
         return parts.joined(separator: "\n")
     }
@@ -95,7 +101,8 @@ struct PlanGenerator {
         do {
             return try decoder.decode(ScreenPlan.self, from: data)
         } catch {
-            throw LLMService.LLMError.decodingFailed(error.localizedDescription)
+            let preview = String(jsonString.prefix(300))
+            throw LLMService.LLMError.decodingFailed("\(error.localizedDescription)\nResponse preview: \(preview)")
         }
     }
 

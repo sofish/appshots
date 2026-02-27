@@ -113,7 +113,7 @@ struct ExportView: View {
 
                     HStack {
                         Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                            .foregroundStyle(isSelected ? .accent : .secondary)
+                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                             .onTapGesture {
                                 if isSelected {
                                     appState.selectedSizes.remove(size.id)

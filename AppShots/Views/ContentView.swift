@@ -53,7 +53,7 @@ struct StepSidebar: View {
             HStack {
                 Image(systemName: "camera.aperture")
                     .font(.title2)
-                    .foregroundStyle(.accent)
+                    .foregroundStyle(Color.accentColor)
                 Text("AppShots")
                     .font(.title2.bold())
             }

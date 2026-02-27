@@ -3,6 +3,9 @@ import CoreGraphics
 #if canImport(CoreText)
 import CoreText
 #endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Renders heading and subheading text using Core Text for precise typographic control.
 /// Uses SF Pro Display as primary font (macOS system), with fallbacks.
@@ -41,6 +44,26 @@ struct TextRenderer {
 
         let attributedString = NSAttributedString(string: text, attributes: allAttributes)
         drawAttributedString(context: context, string: attributedString, rect: rect)
+    }
+
+    // MARK: - Heading with Shadow (for fullBleed — text over image)
+
+    func drawHeadingWithShadow(
+        context: CGContext,
+        text: String,
+        rect: CGRect,
+        color: CGColor,
+        fontSize: CGFloat
+    ) {
+        // Draw shadow pass first (offset, dark)
+        let shadowOffset: CGFloat = fontSize * 0.04
+        let shadowRect = rect.offsetBy(dx: shadowOffset, dy: -shadowOffset)
+        let shadowColor = CGColor(gray: 0, alpha: 0.6)
+
+        drawHeading(context: context, text: text, rect: shadowRect, color: shadowColor, fontSize: fontSize)
+
+        // Draw main heading on top
+        drawHeading(context: context, text: text, rect: rect, color: color, fontSize: fontSize)
     }
 
     // MARK: - Subheading

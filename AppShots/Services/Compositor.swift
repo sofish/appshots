@@ -55,41 +55,62 @@ struct Compositor {
 
         let canvasSize = CGSize(width: width, height: height)
         let layout = layoutEngine.calculate(
-            layout: input.config.layout,
+            tilt: input.config.tilt,
+            position: input.config.position,
+            fullBleed: input.config.fullBleed,
             canvasSize: canvasSize,
             hasSubheading: !input.config.subheading.isEmpty
         )
 
-        // Layer 1: Background
-        drawBackground(context: context, image: input.backgroundImage, size: canvasSize)
-
-        // Layer 2 & 3: Device with screenshot
-        drawDevice(
-            context: context,
-            screenshot: input.screenshot,
-            deviceRect: layout.deviceRect,
-            screenInset: layout.screenInset,
-            rotation: layout.rotationAngle,
-            targetSize: input.targetSize
-        )
-
-        // Layer 4: Text
-        textRenderer.drawHeading(
-            context: context,
-            text: input.config.heading,
-            rect: layout.headingRect,
-            color: hexToColor(input.colors.text),
-            fontSize: layout.headingFontSize
-        )
-
-        if !input.config.subheading.isEmpty {
-            textRenderer.drawSubheading(
+        if layout.screenshotFillsCanvas {
+            drawScreenshotAsBackground(context: context, screenshot: input.screenshot, size: canvasSize)
+            if let scrimRect = layout.gradientScrimRect {
+                drawGradientScrim(context: context, rect: scrimRect)
+            }
+            textRenderer.drawHeadingWithShadow(
                 context: context,
-                text: input.config.subheading,
-                rect: layout.subheadingRect,
-                color: hexToColor(input.colors.subtext),
-                fontSize: layout.subheadingFontSize
+                text: input.config.heading,
+                rect: layout.headingRect,
+                color: hexToColor(input.colors.text),
+                fontSize: layout.headingFontSize
             )
+            if !input.config.subheading.isEmpty {
+                textRenderer.drawSubheading(
+                    context: context,
+                    text: input.config.subheading,
+                    rect: layout.subheadingRect,
+                    color: hexToColor(input.colors.subtext),
+                    fontSize: layout.subheadingFontSize
+                )
+            }
+        } else {
+            drawBackground(context: context, image: input.backgroundImage, size: canvasSize)
+
+            drawDevice(
+                context: context,
+                screenshot: input.screenshot,
+                deviceRect: layout.deviceRect,
+                screenInset: layout.screenInset,
+                rotation: layout.rotationAngle,
+                targetSize: input.targetSize
+            )
+
+            textRenderer.drawHeading(
+                context: context,
+                text: input.config.heading,
+                rect: layout.headingRect,
+                color: hexToColor(input.colors.text),
+                fontSize: layout.headingFontSize
+            )
+            if !input.config.subheading.isEmpty {
+                textRenderer.drawSubheading(
+                    context: context,
+                    text: input.config.subheading,
+                    rect: layout.subheadingRect,
+                    color: hexToColor(input.colors.subtext),
+                    fontSize: layout.subheadingFontSize
+                )
+            }
         }
 
         guard let cgImage = context.makeImage() else {
@@ -124,46 +145,67 @@ struct Compositor {
 
         let canvasSize = CGSize(width: width, height: height)
         let layout = layoutEngine.calculate(
-            layout: config.layout,
+            tilt: config.tilt,
+            position: config.position,
+            fullBleed: config.fullBleed,
             canvasSize: canvasSize,
             hasSubheading: !config.subheading.isEmpty
         )
 
-        // Layer 1: Gradient background
-        drawGradientBackground(
-            context: context,
-            size: canvasSize,
-            primaryColor: hexToColor(colors.primary),
-            accentColor: hexToColor(colors.accent)
-        )
-
-        // Layer 2 & 3: Device with screenshot
-        drawDevice(
-            context: context,
-            screenshot: screenshot,
-            deviceRect: layout.deviceRect,
-            screenInset: layout.screenInset,
-            rotation: layout.rotationAngle,
-            targetSize: targetSize
-        )
-
-        // Layer 4: Text
-        textRenderer.drawHeading(
-            context: context,
-            text: config.heading,
-            rect: layout.headingRect,
-            color: hexToColor(colors.text),
-            fontSize: layout.headingFontSize
-        )
-
-        if !config.subheading.isEmpty {
-            textRenderer.drawSubheading(
+        if layout.screenshotFillsCanvas {
+            drawScreenshotAsBackground(context: context, screenshot: screenshot, size: canvasSize)
+            if let scrimRect = layout.gradientScrimRect {
+                drawGradientScrim(context: context, rect: scrimRect)
+            }
+            textRenderer.drawHeadingWithShadow(
                 context: context,
-                text: config.subheading,
-                rect: layout.subheadingRect,
-                color: hexToColor(colors.subtext),
-                fontSize: layout.subheadingFontSize
+                text: config.heading,
+                rect: layout.headingRect,
+                color: hexToColor(colors.text),
+                fontSize: layout.headingFontSize
             )
+            if !config.subheading.isEmpty {
+                textRenderer.drawSubheading(
+                    context: context,
+                    text: config.subheading,
+                    rect: layout.subheadingRect,
+                    color: hexToColor(colors.subtext),
+                    fontSize: layout.subheadingFontSize
+                )
+            }
+        } else {
+            drawGradientBackground(
+                context: context,
+                size: canvasSize,
+                primaryColor: hexToColor(colors.primary),
+                accentColor: hexToColor(colors.accent)
+            )
+
+            drawDevice(
+                context: context,
+                screenshot: screenshot,
+                deviceRect: layout.deviceRect,
+                screenInset: layout.screenInset,
+                rotation: layout.rotationAngle,
+                targetSize: targetSize
+            )
+
+            textRenderer.drawHeading(
+                context: context,
+                text: config.heading,
+                rect: layout.headingRect,
+                color: hexToColor(colors.text),
+                fontSize: layout.headingFontSize
+            )
+            if !config.subheading.isEmpty {
+                textRenderer.drawSubheading(
+                    context: context,
+                    text: config.subheading,
+                    rect: layout.subheadingRect,
+                    color: hexToColor(colors.subtext),
+                    fontSize: layout.subheadingFontSize
+                )
+            }
         }
 
         guard let cgImage = context.makeImage() else {
@@ -225,63 +267,165 @@ struct Compositor {
             context.translateBy(x: -centerX, y: -centerY)
         }
 
-        // Draw screenshot inside the device area
-        if let cgScreenshot = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            let screenRect = CGRect(
-                x: deviceRect.origin.x + screenInset.origin.x,
-                y: deviceRect.origin.y + screenInset.origin.y,
-                width: screenInset.width,
-                height: screenInset.height
-            )
+        let screenRect = CGRect(
+            x: deviceRect.origin.x + screenInset.origin.x,
+            y: deviceRect.origin.y + screenInset.origin.y,
+            width: screenInset.width,
+            height: screenInset.height
+        )
+        let screenCornerRadius = deviceRect.width * 0.06
+        let bodyCornerRadius = deviceRect.width * 0.08
 
-            // Clip to rounded rect for screen (save/restore state to undo clip)
-            context.saveGState()
-            let cornerRadius: CGFloat = 20
-            let clipPath = CGPath(roundedRect: screenRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
-            context.addPath(clipPath)
-            context.clip()
-            context.draw(cgScreenshot, in: screenRect)
-            context.restoreGState()
-        }
-
-        // Draw device frame overlay (if available)
+        // 1. Draw device body (solid dark bezel)
         if let frameImage = deviceFrame.loadFrame(for: targetSize)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             context.draw(frameImage, in: deviceRect)
         } else {
-            // Fallback: draw a simple device bezel
-            drawSimpleDeviceBezel(context: context, rect: deviceRect)
+            drawIPhoneFrame(context: context, deviceRect: deviceRect, screenRect: screenRect,
+                            bodyRadius: bodyCornerRadius, screenRadius: screenCornerRadius)
+        }
+
+        // 2. Draw screenshot inside the screen area (aspect-fill)
+        if let cgScreenshot = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            context.saveGState()
+            let clipPath = CGPath(roundedRect: screenRect,
+                                  cornerWidth: screenCornerRadius, cornerHeight: screenCornerRadius,
+                                  transform: nil)
+            context.addPath(clipPath)
+            context.clip()
+
+            let imgW = CGFloat(cgScreenshot.width)
+            let imgH = CGFloat(cgScreenshot.height)
+            let imgAspect = imgW / imgH
+            let screenAspect = screenRect.width / screenRect.height
+            var drawRect: CGRect
+            if imgAspect > screenAspect {
+                let drawHeight = screenRect.height
+                let drawWidth = drawHeight * imgAspect
+                drawRect = CGRect(x: screenRect.minX + (screenRect.width - drawWidth) / 2,
+                                  y: screenRect.minY,
+                                  width: drawWidth, height: drawHeight)
+            } else {
+                let drawWidth = screenRect.width
+                let drawHeight = drawWidth / imgAspect
+                drawRect = CGRect(x: screenRect.minX,
+                                  y: screenRect.minY + (screenRect.height - drawHeight) / 2,
+                                  width: drawWidth, height: drawHeight)
+            }
+            context.draw(cgScreenshot, in: drawRect)
+            context.restoreGState()
+        }
+
+        // 3. Draw Dynamic Island on top of screenshot
+        if deviceFrame.loadFrame(for: targetSize) == nil {
+            drawDynamicIsland(context: context, screenRect: screenRect)
         }
 
         context.restoreGState()
     }
 
-    private func drawSimpleDeviceBezel(context: CGContext, rect: CGRect) {
-        let cornerRadius: CGFloat = rect.width * 0.08
-        let bezelPath = CGPath(
-            roundedRect: rect,
-            cornerWidth: cornerRadius,
-            cornerHeight: cornerRadius,
-            transform: nil
-        )
+    private func drawIPhoneFrame(
+        context: CGContext,
+        deviceRect: CGRect,
+        screenRect: CGRect,
+        bodyRadius: CGFloat,
+        screenRadius: CGFloat
+    ) {
+        let bodyPath = CGPath(roundedRect: deviceRect,
+                              cornerWidth: bodyRadius, cornerHeight: bodyRadius,
+                              transform: nil)
+        context.setFillColor(CGColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1.0))
+        context.addPath(bodyPath)
+        context.fillPath()
 
-        // Outer bezel
-        context.setStrokeColor(CGColor(gray: 0.2, alpha: 0.8))
-        context.setLineWidth(4)
-        context.addPath(bezelPath)
+        context.setStrokeColor(CGColor(gray: 0.25, alpha: 0.6))
+        context.setLineWidth(1.5)
+        context.addPath(bodyPath)
         context.strokePath()
 
-        // Inner shadow effect
-        let insetRect = rect.insetBy(dx: 2, dy: 2)
-        let innerPath = CGPath(
-            roundedRect: insetRect,
-            cornerWidth: cornerRadius - 2,
-            cornerHeight: cornerRadius - 2,
-            transform: nil
-        )
-        context.setStrokeColor(CGColor(gray: 0.3, alpha: 0.5))
+        let grooveRect = screenRect.insetBy(dx: -1.5, dy: -1.5)
+        let groovePath = CGPath(roundedRect: grooveRect,
+                                cornerWidth: screenRadius + 1.5, cornerHeight: screenRadius + 1.5,
+                                transform: nil)
+        context.setStrokeColor(CGColor(gray: 0.05, alpha: 0.8))
         context.setLineWidth(1)
-        context.addPath(innerPath)
+        context.addPath(groovePath)
         context.strokePath()
+
+        let buttonWidth: CGFloat = 3
+        let buttonHeight = deviceRect.height * 0.06
+        let buttonY = deviceRect.origin.y + deviceRect.height * 0.55
+        let buttonRect = CGRect(x: deviceRect.maxX - 0.5,
+                                y: buttonY, width: buttonWidth, height: buttonHeight)
+        context.setFillColor(CGColor(gray: 0.15, alpha: 0.9))
+        context.fill(buttonRect)
+
+        let volWidth: CGFloat = 3
+        let volHeight = deviceRect.height * 0.04
+        for i in 0..<2 {
+            let volY = deviceRect.origin.y + deviceRect.height * (0.58 + CGFloat(i) * 0.06)
+            let volRect = CGRect(x: deviceRect.minX - volWidth + 0.5,
+                                 y: volY, width: volWidth, height: volHeight)
+            context.setFillColor(CGColor(gray: 0.15, alpha: 0.9))
+            context.fill(volRect)
+        }
+    }
+
+    private func drawDynamicIsland(context: CGContext, screenRect: CGRect) {
+        let pillWidth = screenRect.width * 0.25
+        let pillHeight = screenRect.width * 0.035
+        let pillX = screenRect.midX - pillWidth / 2
+        let pillY = screenRect.maxY - pillHeight - screenRect.height * 0.012
+
+        let pillRect = CGRect(x: pillX, y: pillY, width: pillWidth, height: pillHeight)
+        let pillPath = CGPath(roundedRect: pillRect,
+                              cornerWidth: pillHeight / 2, cornerHeight: pillHeight / 2,
+                              transform: nil)
+        context.setFillColor(CGColor(gray: 0.0, alpha: 0.95))
+        context.addPath(pillPath)
+        context.fillPath()
+    }
+
+    // MARK: - Full Bleed Drawing Helpers
+
+    private func drawScreenshotAsBackground(context: CGContext, screenshot: NSImage, size: CGSize) {
+        guard let cgImage = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let imageAspect = CGFloat(cgImage.width) / CGFloat(cgImage.height)
+        let canvasAspect = size.width / size.height
+        var drawRect: CGRect
+        if imageAspect > canvasAspect {
+            let drawHeight = size.height
+            let drawWidth = drawHeight * imageAspect
+            drawRect = CGRect(x: (size.width - drawWidth) / 2, y: 0, width: drawWidth, height: drawHeight)
+        } else {
+            let drawWidth = size.width
+            let drawHeight = drawWidth / imageAspect
+            drawRect = CGRect(x: 0, y: (size.height - drawHeight) / 2, width: drawWidth, height: drawHeight)
+        }
+        context.draw(cgImage, in: drawRect)
+    }
+
+    private func drawGradientScrim(context: CGContext, rect: CGRect) {
+        context.saveGState()
+        let colors = [
+            CGColor(gray: 0, alpha: 0.85),
+            CGColor(gray: 0, alpha: 0.0)
+        ] as CFArray
+        let locations: [CGFloat] = [0.0, 1.0]
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors,
+            locations: locations
+        ) else {
+            context.restoreGState()
+            return
+        }
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: rect.midX, y: rect.minY),
+            end: CGPoint(x: rect.midX, y: rect.maxY),
+            options: []
+        )
+        context.restoreGState()
     }
 
     // MARK: - Color Conversion
@@ -290,12 +434,10 @@ struct Compositor {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
 
-        // Expand 3-digit hex (e.g., "fff" → "ffffff")
         if hexSanitized.count == 3 {
             hexSanitized = hexSanitized.map { "\($0)\($0)" }.joined()
         }
 
-        // Validate: must be exactly 6 hex characters
         guard hexSanitized.count == 6,
               hexSanitized.allSatisfy({ $0.isHexDigit }) else {
             return CGColor(gray: 0, alpha: 1.0)

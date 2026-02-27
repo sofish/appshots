@@ -1,31 +1,5 @@
 import Foundation
 
-// MARK: - Layout Type
-
-enum LayoutType: String, Codable, CaseIterable, Identifiable {
-    case centerDevice = "center_device"
-    case leftDevice = "left_device"
-    case tilted
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .centerDevice: return "Center Device"
-        case .leftDevice: return "Left Device"
-        case .tilted: return "Tilted 3D"
-        }
-    }
-
-    var iconName: String {
-        switch self {
-        case .centerDevice: return "iphone"
-        case .leftDevice: return "rectangle.lefthalf.inset.filled"
-        case .tilted: return "rotate.3d"
-        }
-    }
-}
-
 // MARK: - Resolved Colors
 
 struct ResolvedColors: Codable, Equatable {
@@ -50,8 +24,11 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
     var screenshotMatch: Int
     var heading: String
     var subheading: String
-    var layout: LayoutType
+    var tilt: Bool
+    var position: String       // "center", "left", "right"
+    var fullBleed: Bool
     var visualDirection: String
+    var imagePrompt: String    // Creative prompt for Gemini image generation
 
     init(
         id: UUID = UUID(),
@@ -59,16 +36,22 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
         screenshotMatch: Int,
         heading: String,
         subheading: String,
-        layout: LayoutType = .centerDevice,
-        visualDirection: String = ""
+        tilt: Bool = false,
+        position: String = "center",
+        fullBleed: Bool = false,
+        visualDirection: String = "",
+        imagePrompt: String = ""
     ) {
         self.id = id
         self.index = index
         self.screenshotMatch = screenshotMatch
         self.heading = heading
         self.subheading = subheading
-        self.layout = layout
+        self.tilt = tilt
+        self.position = position
+        self.fullBleed = fullBleed
         self.visualDirection = visualDirection
+        self.imagePrompt = imagePrompt
     }
 }
 
@@ -97,6 +80,15 @@ extension ScreenPlan {
         case appName = "app_name"
         case tagline, tone, colors, screens
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.appName = try container.decodeIfPresent(String.self, forKey: .appName) ?? ""
+        self.tagline = try container.decodeIfPresent(String.self, forKey: .tagline) ?? ""
+        self.tone = (try? container.decode(VisualStyle.self, forKey: .tone)) ?? .minimal
+        self.colors = try container.decodeIfPresent(ResolvedColors.self, forKey: .colors) ?? .default
+        self.screens = try container.decode([ScreenConfig].self, forKey: .screens)
+    }
 }
 
 extension ScreenConfig {
@@ -104,19 +96,24 @@ extension ScreenConfig {
     enum CodingKeys: String, CodingKey {
         case index
         case screenshotMatch = "screenshot_match"
-        case heading, subheading, layout
+        case heading, subheading, tilt, position
+        case fullBleed = "full_bleed"
         case visualDirection = "visual_direction"
+        case imagePrompt = "image_prompt"
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.id = UUID() // Auto-generate; LLM won't provide this
         self.index = try container.decode(Int.self, forKey: .index)
-        self.screenshotMatch = try container.decode(Int.self, forKey: .screenshotMatch)
+        self.screenshotMatch = try container.decodeIfPresent(Int.self, forKey: .screenshotMatch) ?? self.index
         self.heading = try container.decode(String.self, forKey: .heading)
-        self.subheading = try container.decode(String.self, forKey: .subheading)
-        self.layout = try container.decode(LayoutType.self, forKey: .layout)
-        self.visualDirection = try container.decode(String.self, forKey: .visualDirection)
+        self.subheading = try container.decodeIfPresent(String.self, forKey: .subheading) ?? ""
+        self.tilt = try container.decodeIfPresent(Bool.self, forKey: .tilt) ?? false
+        self.position = try container.decodeIfPresent(String.self, forKey: .position) ?? "center"
+        self.fullBleed = try container.decodeIfPresent(Bool.self, forKey: .fullBleed) ?? false
+        self.visualDirection = try container.decodeIfPresent(String.self, forKey: .visualDirection) ?? ""
+        self.imagePrompt = try container.decodeIfPresent(String.self, forKey: .imagePrompt) ?? ""
     }
 
     func encode(to encoder: Encoder) throws {
@@ -125,7 +122,10 @@ extension ScreenConfig {
         try container.encode(screenshotMatch, forKey: .screenshotMatch)
         try container.encode(heading, forKey: .heading)
         try container.encode(subheading, forKey: .subheading)
-        try container.encode(layout, forKey: .layout)
+        try container.encode(tilt, forKey: .tilt)
+        try container.encode(position, forKey: .position)
+        try container.encode(fullBleed, forKey: .fullBleed)
         try container.encode(visualDirection, forKey: .visualDirection)
+        try container.encode(imagePrompt, forKey: .imagePrompt)
     }
 }

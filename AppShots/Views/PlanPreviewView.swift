@@ -170,7 +170,7 @@ struct ScreenCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Card header
             HStack {
-                Label("Screen \(index + 1)", systemImage: screen.layout.iconName)
+                Label("Screen \(index + 1)", systemImage: "iphone")
                     .font(.caption.bold())
                     .foregroundStyle(.secondary)
 
@@ -219,33 +219,32 @@ struct ScreenCardView: View {
                     .font(.caption)
             }
 
-            // Layout picker
-            HStack(spacing: 6) {
-                Text("Layout:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            // Layout modifiers
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    Toggle("Tilt", isOn: $screen.tilt)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
 
-                ForEach(LayoutType.allCases) { layout in
-                    Button {
-                        screen.layout = layout
-                    } label: {
-                        Image(systemName: layout.iconName)
-                            .font(.caption)
-                            .padding(6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(screen.layout == layout ? Color.accentColor.opacity(0.2) : .clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(layout.displayName)
+                    Toggle("Full Bleed", isOn: $screen.fullBleed)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                 }
+                .font(.caption)
+
+                Picker("Position", selection: $screen.position) {
+                    Text("Left").tag("left")
+                    Text("Center").tag("center")
+                    Text("Right").tag("right")
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.small)
             }
 
-            // Visual direction preview
+            // Image prompt (sent to Gemini)
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Background Direction")
+                    Text("Image Prompt")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                     Spacer()
@@ -257,7 +256,7 @@ struct ScreenCardView: View {
                     .controlSize(.mini)
                 }
 
-                Text(screen.visualDirection)
+                Text(screen.imagePrompt.isEmpty ? screen.visualDirection : screen.imagePrompt)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
@@ -273,7 +272,7 @@ struct ScreenCardView: View {
                 .stroke(Color.gray.opacity(0.2), lineWidth: 1)
         )
         .sheet(isPresented: $showPromptEditor) {
-            PromptEditorSheet(visualDirection: $screen.visualDirection)
+            PromptEditorSheet(imagePrompt: $screen.imagePrompt)
         }
     }
 }

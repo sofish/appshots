@@ -198,24 +198,22 @@ struct CompositePreviewView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
 
-            // Layout picker
-            HStack(spacing: 4) {
-                ForEach(LayoutType.allCases) { layout in
-                    Button {
-                        screenBinding.wrappedValue.layout = layout
-                    } label: {
-                        Image(systemName: layout.iconName)
-                            .font(.caption2)
-                            .padding(4)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(screenBinding.wrappedValue.layout == layout ? Color.accentColor.opacity(0.2) : .clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help(layout.displayName)
-                }
+            // Layout modifiers
+            Toggle("Tilt", isOn: screenBinding.tilt)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            Toggle("Full Bleed", isOn: screenBinding.fullBleed)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+
+            Picker("Position", selection: screenBinding.position) {
+                Text("Left").tag("left")
+                Text("Center").tag("center")
+                Text("Right").tag("right")
             }
+            .pickerStyle(.segmented)
+            .controlSize(.small)
 
             // Recompose button (instant, no LLM)
             Button("Recompose") {

@@ -1,102 +1,41 @@
 import Foundation
 
-/// LLM Call #2: Translates visual directions from ScreenPlan into
-/// optimized Gemini image generation prompts.
+/// Builds Gemini image generation prompts from ScreenPlan data.
+/// The LLM produces `image_prompt` for each screen — we pass it through.
+/// Only builds a fallback prompt if the LLM didn't provide one.
 struct PromptTranslator {
 
-    private let llmService: LLMService
-
-    init(llmService: LLMService) {
-        self.llmService = llmService
+    func translate(plan: ScreenPlan) -> [ImagePrompt] {
+        plan.screens.map { screen in
+            let prompt = screen.imagePrompt.isEmpty
+                ? buildFallback(screen: screen, plan: plan)
+                : screen.imagePrompt
+            return ImagePrompt(
+                screenIndex: screen.index,
+                prompt: prompt,
+                negativePrompt: ""
+            )
+        }
     }
 
-    func translate(plan: ScreenPlan) async throws -> [ImagePrompt] {
-        let systemPrompt = SystemPrompts.promptTranslation
-        let userMessage = buildUserMessage(from: plan)
+    // MARK: - Fallback prompt (only if LLM didn't provide image_prompt)
 
-        let response = try await llmService.chatCompletion(
-            systemPrompt: systemPrompt,
-            userMessage: userMessage,
-            temperature: 0.5
-        )
-
-        return try parseResponse(response)
-    }
-
-    // MARK: - Build user message
-
-    private func buildUserMessage(from plan: ScreenPlan) -> String {
+    private func buildFallback(screen: ScreenConfig, plan: ScreenPlan) -> String {
         var parts: [String] = []
-        parts.append("App: \(plan.appName)")
-        parts.append("Tone: \(plan.tone.rawValue)")
-        parts.append("Colors: primary=\(plan.colors.primary), accent=\(plan.colors.accent), text=\(plan.colors.text), subtext=\(plan.colors.subtext)")
-        parts.append("")
-        parts.append("Screens to generate backgrounds for:")
-        parts.append("")
 
-        for screen in plan.screens {
-            parts.append("Screen \(screen.index):")
-            parts.append("  Heading: \(screen.heading)")
-            parts.append("  Layout: \(screen.layout.rawValue)")
-            parts.append("  Visual Direction: \(screen.visualDirection)")
-            parts.append("")
+        parts.append("Generate a modern app store screenshot for \"\(plan.appName)\" with the uploaded image inside a device mockup, creative perspective.")
+
+        parts.append("Heading: \"\(screen.heading)\"")
+        if !screen.subheading.isEmpty {
+            parts.append("Subheading: \"\(screen.subheading)\"")
         }
 
-        parts.append("Output target resolution: 1290x2796 pixels (iPhone portrait)")
-        parts.append("Generate ONLY background images — no text, no device frames, no UI elements.")
+        parts.append("Style: \(plan.tone.rawValue), colors: \(plan.colors.primary) / \(plan.colors.accent)")
+
+        if !screen.visualDirection.isEmpty {
+            parts.append("Background: \(screen.visualDirection)")
+        }
 
         return parts.joined(separator: "\n")
-    }
-
-    // MARK: - Parse response
-
-    private func parseResponse(_ response: String) throws -> [ImagePrompt] {
-        let jsonString = extractJSON(from: response)
-
-        guard let data = jsonString.data(using: .utf8) else {
-            throw LLMService.LLMError.decodingFailed("Could not encode response as UTF-8")
-        }
-
-        let decoder = JSONDecoder()
-
-        // Try parsing as { "screens": [...] } first
-        if let set = try? decoder.decode(ImagePromptSet.self, from: data) {
-            return set.screens
-        }
-
-        // Try parsing as a plain array
-        if let array = try? decoder.decode([ImagePrompt].self, from: data) {
-            return array
-        }
-
-        throw LLMService.LLMError.decodingFailed("Could not parse image prompts from response")
-    }
-
-    private func extractJSON(from text: String) -> String {
-        if let startRange = text.range(of: "```json"),
-           let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
-            return String(text[startRange.upperBound..<endRange.lowerBound])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        if let startRange = text.range(of: "```"),
-           let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
-            return String(text[startRange.upperBound..<endRange.lowerBound])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        // Try finding matched JSON object {...} or array [...]
-        if let objStart = text.firstIndex(of: "{"),
-           let objEnd = text.lastIndex(of: "}"),
-           objStart < objEnd {
-            return String(text[objStart...objEnd])
-        }
-        if let arrStart = text.firstIndex(of: "["),
-           let arrEnd = text.lastIndex(of: "]"),
-           arrStart < arrEnd {
-            return String(text[arrStart...arrEnd])
-        }
-
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

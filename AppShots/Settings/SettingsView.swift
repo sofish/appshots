@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Settings view for configuring LLM and Gemini API endpoints.
-/// Accessible from the app menu (⌘,) or sidebar settings button.
+/// Settings view for configuring API endpoints.
+/// Accessible from the app menu or sidebar settings button.
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @State private var llmTestResult: TestResult?
@@ -33,29 +33,29 @@ struct SettingsView: View {
     private var apiSettings: some View {
         Form {
             Section("LLM API (Plan Generation)") {
-                TextField("Base URL", text: $appState.llmBaseURL)
+                TextField("https://api.anthropic.com", text: $appState.llmBaseURL)
                     .textFieldStyle(.roundedBorder)
-                    .help("OpenAI-compatible endpoint. e.g. https://api.openai.com/v1")
+                    .help("Anthropic Messages API endpoint")
 
-                SecureField("API Key", text: $appState.llmAPIKey)
+                SecureField("sk-ant-...", text: $appState.llmAPIKey)
                     .textFieldStyle(.roundedBorder)
 
-                TextField("Model", text: $appState.llmModel)
+                TextField("claude-sonnet-4-20250514", text: $appState.llmModel)
                     .textFieldStyle(.roundedBorder)
-                    .help("e.g. gpt-4o, claude-3.5-sonnet, etc.")
+                    .help("Anthropic model ID")
             }
 
-            Section("Gemini API (Background Generation)") {
-                TextField("Base URL", text: $appState.geminiBaseURL)
+            Section("Image Generation API (Backgrounds)") {
+                TextField("https://generativelanguage.googleapis.com/v1beta/openai", text: $appState.geminiBaseURL)
                     .textFieldStyle(.roundedBorder)
-                    .help("Gemini API endpoint")
+                    .help("OpenAI-compatible endpoint")
 
                 SecureField("API Key", text: $appState.geminiAPIKey)
                     .textFieldStyle(.roundedBorder)
 
-                TextField("Model", text: $appState.geminiModel)
+                TextField("gemini-2.0-flash-preview-image-generation", text: $appState.geminiModel)
                     .textFieldStyle(.roundedBorder)
-                    .help("e.g. gemini-2.0-flash-exp")
+                    .help("Image generation model ID")
             }
 
             Section {
@@ -65,13 +65,13 @@ struct SettingsView: View {
                         testLLMConnection()
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isTesting || appState.llmAPIKey.isEmpty)
+                    .disabled(isTesting || appState.llmAPIKey.isEmpty || appState.llmBaseURL.isEmpty)
 
-                    Button("Test Gemini Connection") {
+                    Button("Test Image Gen Connection") {
                         testGeminiConnection()
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isTesting || appState.geminiAPIKey.isEmpty)
+                    .disabled(isTesting || appState.geminiAPIKey.isEmpty || appState.geminiBaseURL.isEmpty)
                     Spacer()
                 }
 
@@ -92,7 +92,7 @@ struct SettingsView: View {
                 }
 
                 if let result = geminiTestResult {
-                    testResultView("Gemini", result: result)
+                    testResultView("Image Gen", result: result)
                 }
             }
         }
@@ -124,7 +124,7 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             Image(systemName: "camera.aperture")
                 .font(.system(size: 48))
-                .foregroundStyle(.accent)
+                .foregroundStyle(Color.accentColor)
 
             Text("AppShots")
                 .font(.title.bold())
@@ -154,7 +154,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: - Actions
+    // MARK: - Connection Test (Anthropic Messages API)
 
     private func testLLMConnection() {
         llmTestResult = nil
@@ -162,22 +162,43 @@ struct SettingsView: View {
         Task {
             await appState.syncServiceConfigs()
             do {
-                let url = appState.llmBaseURL.hasSuffix("/")
-                    ? appState.llmBaseURL + "models"
-                    : appState.llmBaseURL + "/models"
-                guard let endpoint = URL(string: url) else {
+                let base = appState.llmBaseURL.hasSuffix("/")
+                    ? String(appState.llmBaseURL.dropLast())
+                    : appState.llmBaseURL
+                let urlString = base.hasSuffix("/v1")
+                    ? base + "/messages"
+                    : base + "/v1/messages"
+                guard let endpoint = URL(string: urlString) else {
                     llmTestResult = .failure("Invalid URL")
                     isTesting = false
                     return
                 }
+
+                let body: [String: Any] = [
+                    "model": appState.llmModel,
+                    "max_tokens": 16,
+                    "messages": [["role": "user", "content": "Hi"]]
+                ]
+
                 var request = URLRequest(url: endpoint)
-                request.setValue("Bearer \(appState.llmAPIKey)", forHTTPHeaderField: "Authorization")
-                request.timeoutInterval = 10
-                let (_, response) = try await URLSession.shared.data(for: request)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue(appState.llmAPIKey, forHTTPHeaderField: "x-api-key")
+                request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                request.timeoutInterval = 15
+
+                let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     llmTestResult = .success("Connected (HTTP \(http.statusCode))")
                 } else if let http = response as? HTTPURLResponse {
-                    llmTestResult = .failure("HTTP \(http.statusCode)")
+                    var detail = "HTTP \(http.statusCode)"
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        detail += " — \(message)"
+                    }
+                    llmTestResult = .failure(detail)
                 }
             } catch {
                 llmTestResult = .failure(error.localizedDescription)
@@ -192,19 +213,47 @@ struct SettingsView: View {
         Task {
             await appState.syncServiceConfigs()
             do {
-                let url = "\(appState.geminiBaseURL)/models/\(appState.geminiModel)?key=\(appState.geminiAPIKey)"
-                guard let endpoint = URL(string: url) else {
+                let base = appState.geminiBaseURL.hasSuffix("/")
+                    ? String(appState.geminiBaseURL.dropLast())
+                    : appState.geminiBaseURL
+                let urlString: String
+                if base.hasSuffix("/chat/completions") {
+                    urlString = base
+                } else if base.hasSuffix("/v1") || base.hasSuffix("/v1beta/openai") {
+                    urlString = base + "/chat/completions"
+                } else {
+                    urlString = base + "/v1/chat/completions"
+                }
+                guard let endpoint = URL(string: urlString) else {
                     geminiTestResult = .failure("Invalid URL")
                     isTesting = false
                     return
                 }
+
+                let body: [String: Any] = [
+                    "model": appState.geminiModel,
+                    "max_tokens": 16,
+                    "messages": [["role": "user", "content": "Hi"]]
+                ]
+
                 var request = URLRequest(url: endpoint)
-                request.timeoutInterval = 10
-                let (_, response) = try await URLSession.shared.data(for: request)
+                request.httpMethod = "POST"
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.setValue("Bearer \(appState.geminiAPIKey)", forHTTPHeaderField: "Authorization")
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                request.timeoutInterval = 15
+
+                let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     geminiTestResult = .success("Connected (HTTP \(http.statusCode))")
                 } else if let http = response as? HTTPURLResponse {
-                    geminiTestResult = .failure("HTTP \(http.statusCode)")
+                    var detail = "HTTP \(http.statusCode)"
+                    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let error = json["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        detail += " — \(message)"
+                    }
+                    geminiTestResult = .failure(detail)
                 }
             } catch {
                 geminiTestResult = .failure(error.localizedDescription)

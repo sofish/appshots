@@ -1,25 +1,27 @@
 import Foundation
 
-/// Generates background images using Gemini API (or compatible image generation endpoint).
-/// Calls are made in parallel using Swift Concurrency TaskGroup.
+/// Generates background images using an OpenAI-compatible Chat Completions API endpoint.
+/// Works with OpenAI, OpenRouter, Google Gemini (via OpenAI-compat), LiteLLM, etc.
 actor BackgroundGenerator {
 
     struct Configuration {
-        var baseURL: String = "https://generativelanguage.googleapis.com/v1beta"
+        var baseURL: String = ""
         var apiKey: String = ""
-        var model: String = "gemini-2.0-flash-exp"
+        var model: String = ""
     }
 
     enum GeneratorError: LocalizedError {
         case invalidURL
         case noAPIKey
+        case noBaseURL
         case generationFailed(String)
         case invalidImageData
 
         var errorDescription: String? {
             switch self {
-            case .invalidURL: return "Invalid Gemini API URL."
-            case .noAPIKey: return "No Gemini API key configured."
+            case .invalidURL: return "Invalid API URL."
+            case .noAPIKey: return "No image generation API key configured. Set it in Settings."
+            case .noBaseURL: return "No image generation base URL configured. Set it in Settings."
             case .generationFailed(let msg): return "Image generation failed: \(msg)"
             case .invalidImageData: return "Generated image data is invalid."
             }
@@ -40,14 +42,17 @@ actor BackgroundGenerator {
 
     func generateAll(
         prompts: [ImagePrompt],
+        screenshotDataMap: [Int: Data] = [:],
         onProgress: @Sendable @escaping (Int, Data) -> Void
     ) async throws -> [Int: Data] {
+        guard !config.baseURL.isEmpty else { throw GeneratorError.noBaseURL }
         guard !config.apiKey.isEmpty else { throw GeneratorError.noAPIKey }
 
         return try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             for prompt in prompts {
+                let screenshotData = screenshotDataMap[prompt.screenIndex]
                 group.addTask {
-                    let imageData = try await self.generateSingle(prompt: prompt)
+                    let imageData = try await self.generateSingle(prompt: prompt, screenshotData: screenshotData)
                     onProgress(prompt.screenIndex, imageData)
                     return (prompt.screenIndex, imageData)
                 }
@@ -61,33 +66,51 @@ actor BackgroundGenerator {
         }
     }
 
-    // MARK: - Generate single background
+    // MARK: - Generate single background (OpenAI-compatible Chat Completions)
 
-    func generateSingle(prompt: ImagePrompt) async throws -> Data {
+    func generateSingle(prompt: ImagePrompt, screenshotData: Data? = nil) async throws -> Data {
+        guard !config.baseURL.isEmpty else { throw GeneratorError.noBaseURL }
         guard !config.apiKey.isEmpty else { throw GeneratorError.noAPIKey }
 
-        let urlString = "\(config.baseURL)/models/\(config.model):generateContent?key=\(config.apiKey)"
+        let base = config.baseURL.hasSuffix("/")
+            ? String(config.baseURL.dropLast())
+            : config.baseURL
+        let urlString: String
+        if base.hasSuffix("/chat/completions") {
+            urlString = base
+        } else if base.hasSuffix("/v1") || base.hasSuffix("/v1beta/openai") {
+            urlString = base + "/chat/completions"
+        } else {
+            urlString = base + "/v1/chat/completions"
+        }
         guard let url = URL(string: urlString) else {
             throw GeneratorError.invalidURL
         }
 
+        // Build message content — multimodal if screenshot data provided
+        let messageContent: Any
+        if let screenshotData = screenshotData {
+            let base64 = screenshotData.base64EncodedString()
+            messageContent = [
+                ["type": "image_url", "image_url": ["url": "data:image/png;base64,\(base64)"]],
+                ["type": "text", "text": prompt.prompt]
+            ] as [[String: Any]]
+        } else {
+            messageContent = prompt.prompt
+        }
+
         let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["text": prompt.prompt]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "responseModalities": ["image", "text"],
-                "responseMimeType": "image/png"
+            "model": config.model,
+            "max_tokens": 4096,
+            "messages": [
+                ["role": "user", "content": messageContent]
             ]
         ]
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         request.timeoutInterval = 120
 
@@ -99,37 +122,130 @@ actor BackgroundGenerator {
             throw GeneratorError.generationFailed("HTTP \(httpResponse.statusCode): \(errorBody)")
         }
 
-        return try extractImageData(from: data)
+        return try await extractImageData(from: data)
     }
 
-    // MARK: - Extract image from Gemini response
+    // MARK: - Extract image from OpenAI-compatible response
 
-    private func extractImageData(from responseData: Data) throws -> Data {
-        guard let json = try JSONSerialization.jsonObject(with: responseData) as? [String: Any],
-              let candidates = json["candidates"] as? [[String: Any]],
-              let first = candidates.first,
-              let content = first["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]] else {
-            throw GeneratorError.generationFailed("Unexpected response format")
+    private func extractImageData(from responseData: Data) async throws -> Data {
+        let json: Any
+        do {
+            json = try JSONSerialization.jsonObject(with: responseData)
+        } catch {
+            let preview = String(data: responseData.prefix(500), encoding: .utf8) ?? "<binary>"
+            throw GeneratorError.generationFailed("Response is not valid JSON: \(preview)")
         }
 
-        // Look for inline_data with image
-        for part in parts {
-            if let inlineData = part["inline_data"] as? [String: Any],
-               let base64 = inlineData["data"] as? String,
-               let imageData = Data(base64Encoded: base64) {
+        guard let dict = json as? [String: Any] else {
+            throw GeneratorError.generationFailed("Expected JSON object at top level.")
+        }
+
+        // Check for API error response
+        if let error = dict["error"] as? [String: Any],
+           let message = error["message"] as? String {
+            throw GeneratorError.generationFailed("API error: \(message)")
+        }
+
+        // OpenAI Chat Completions format: choices[].message.content
+        if let choices = dict["choices"] as? [[String: Any]],
+           let firstChoice = choices.first,
+           let message = firstChoice["message"] as? [String: Any] {
+
+            // content can be a string or an array of content parts
+            if let contentArray = message["content"] as? [[String: Any]] {
+                // Multimodal response: array of parts
+                for part in contentArray {
+                    if let imageData = extractImageFromPart(part) {
+                        return imageData
+                    }
+                }
+                // Fallback: try base64 from text parts
+                for part in contentArray {
+                    if (part["type"] as? String) == "text",
+                       let text = part["text"] as? String,
+                       let imageData = extractBase64FromText(text) {
+                        return imageData
+                    }
+                }
+            } else if let contentString = message["content"] as? String {
+                // Plain text response — try to decode as base64
+                if let imageData = extractBase64FromText(contentString) {
+                    return imageData
+                }
+            }
+        }
+
+        // OpenAI Images API format: data[].b64_json
+        if let dataArray = dict["data"] as? [[String: Any]] {
+            for item in dataArray {
+                if let b64 = item["b64_json"] as? String,
+                   let imageData = Data(base64Encoded: b64, options: .ignoreUnknownCharacters),
+                   imageData.count > 100 {
+                    return imageData
+                }
+                // Also check url field and download
+                if let urlStr = item["url"] as? String,
+                   let url = URL(string: urlStr) {
+                    let (data, _) = try await URLSession.shared.data(from: url)
+                    if data.count > 100 {
+                        return data
+                    }
+                }
+            }
+        }
+
+        let preview = String(data: responseData.prefix(500), encoding: .utf8) ?? ""
+        throw GeneratorError.generationFailed("No image data found in response. Preview: \(preview)")
+    }
+
+    /// Extract image data from a multimodal content part.
+    private func extractImageFromPart(_ part: [String: Any]) -> Data? {
+        let type = part["type"] as? String
+
+        // OpenAI format: { "type": "image_url", "image_url": { "url": "data:image/png;base64,..." } }
+        if type == "image_url",
+           let imageUrl = part["image_url"] as? [String: Any],
+           let urlStr = imageUrl["url"] as? String {
+            return extractBase64FromText(urlStr)
+        }
+
+        // Inline base64: { "type": "image", "data": "...", "media_type": "..." }
+        if type == "image",
+           let b64 = part["data"] as? String,
+           let imageData = Data(base64Encoded: b64, options: .ignoreUnknownCharacters),
+           imageData.count > 100 {
+            return imageData
+        }
+
+        // Gemini-via-OpenAI: { "type": "image", "image": { "url": "data:..." } }
+        if type == "image",
+           let imageDict = part["image"] as? [String: Any],
+           let urlStr = imageDict["url"] as? String {
+            return extractBase64FromText(urlStr)
+        }
+
+        return nil
+    }
+
+    /// Try to extract base64-encoded image data from a text string.
+    private func extractBase64FromText(_ text: String) -> Data? {
+        // Direct base64 decode
+        if let imageData = Data(base64Encoded: text, options: .ignoreUnknownCharacters),
+           imageData.count > 100 {
+            return imageData
+        }
+
+        // Data URI: data:image/png;base64,...
+        if let range = text.range(of: "base64,") {
+            let b64 = String(text[range.upperBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: CharacterSet(charactersIn: "\"' \n")).first ?? ""
+            if let imageData = Data(base64Encoded: b64, options: .ignoreUnknownCharacters),
+               imageData.count > 100 {
                 return imageData
             }
         }
 
-        // Look for image in text response (base64 encoded)
-        for part in parts {
-            if let text = part["text"] as? String,
-               let imageData = Data(base64Encoded: text) {
-                return imageData
-            }
-        }
-
-        throw GeneratorError.invalidImageData
+        return nil
     }
 }

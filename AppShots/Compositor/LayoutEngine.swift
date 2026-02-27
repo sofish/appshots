@@ -2,8 +2,12 @@ import Foundation
 import CoreGraphics
 
 /// Calculates layout coordinates for all elements in a screenshot composition.
-/// Responsible for positioning the device frame, text areas, and managing
-/// the spatial relationship between elements for each layout type.
+///
+/// Design principles:
+/// - Device defaults to BIG (80% canvas width) for maximum impact
+/// - 3 keyword modifiers: tilt (rotation), position (center/left/right), fullBleed (no frame)
+/// - Text compact around content, minimal gap between text and device
+/// - Device extends below canvas (bottom-clipped) to maximize visible screen area
 struct LayoutEngine {
 
     /// Result of a layout calculation — all rects and sizes needed for composition.
@@ -15,242 +19,230 @@ struct LayoutEngine {
         let headingFontSize: CGFloat
         let subheadingFontSize: CGFloat
         let rotationAngle: CGFloat    // degrees, 0 for non-tilted
+
+        var screenshotFillsCanvas: Bool = false     // fullBleed: screenshot as background
+        var gradientScrimRect: CGRect? = nil        // fullBleed: gradient overlay area
     }
 
-    // MARK: - Layout Constants
+    // MARK: - Shared Constants
 
-    /// Margins as proportion of canvas width
-    private let horizontalMarginRatio: CGFloat = 0.06
-    /// Top safe area ratio
-    private let topMarginRatio: CGFloat = 0.04
-    /// Spacing between text and device
-    private let textDeviceSpacingRatio: CGFloat = 0.02
-    /// Device width as proportion of canvas width
-    private let deviceWidthRatio: CGFloat = 0.65
-    /// Text area height as proportion of canvas height
-    private let textAreaRatioWithSub: CGFloat = 0.28
-    private let textAreaRatioNoSub: CGFloat = 0.22
-    /// Device frame border (bezel) ratio relative to device width
-    private let frameBorderRatio: CGFloat = 0.025
-    /// Screen corner radius ratio
-    private let screenCornerRatio: CGFloat = 0.04
+    private let deviceAspect: CGFloat = 19.5 / 9.0  // iPhone aspect ratio
+    private let frameBorderRatio: CGFloat = 0.04      // Bezel relative to device width
+    private let hMargin: CGFloat = 0.06               // Horizontal margin as ratio of width
 
     // MARK: - Calculate Layout
 
     func calculate(
-        layout: LayoutType,
+        tilt: Bool,
+        position: String,
+        fullBleed: Bool,
         canvasSize: CGSize,
         hasSubheading: Bool
     ) -> LayoutResult {
-        switch layout {
-        case .centerDevice:
-            return calculateCenterDevice(canvasSize: canvasSize, hasSubheading: hasSubheading)
-        case .leftDevice:
-            return calculateLeftDevice(canvasSize: canvasSize, hasSubheading: hasSubheading)
-        case .tilted:
-            return calculateTilted(canvasSize: canvasSize, hasSubheading: hasSubheading)
+        if fullBleed {
+            return calculateFullBleed(canvasSize: canvasSize, hasSubheading: hasSubheading)
+        }
+        return calculateStandard(
+            tilt: tilt,
+            position: position,
+            canvasSize: canvasSize,
+            hasSubheading: hasSubheading
+        )
+    }
+
+    // MARK: - Helpers
+
+    /// Build a device rect + screen inset from width and position.
+    private func makeDevice(width: CGFloat, x: CGFloat, y: CGFloat) -> (rect: CGRect, inset: CGRect) {
+        let height = width * deviceAspect
+        let rect = CGRect(x: x, y: y, width: width, height: height)
+        let border = width * frameBorderRatio
+        let inset = CGRect(x: border, y: border, width: width - 2 * border, height: height - 2 * border)
+        return (rect, inset)
+    }
+
+    /// Position heading + subheading compactly in a text zone.
+    private func makeTextRects(
+        canvasSize: CGSize,
+        topY: CGFloat,
+        textWidth: CGFloat,
+        textX: CGFloat,
+        hasSubheading: Bool,
+        headingScale: CGFloat = 0.08,
+        subheadingScale: CGFloat = 0.04
+    ) -> (CGRect, CGRect, CGFloat, CGFloat) {
+        let w = canvasSize.width
+        let headingFontSize = w * headingScale
+        let subheadingFontSize = w * subheadingScale
+
+        let headingHeight = headingFontSize * 3.0
+        let subheadingHeight = hasSubheading ? subheadingFontSize * 2.5 : 0
+        let gap = hasSubheading ? headingFontSize * 0.3 : 0
+
+        let headingRect = CGRect(
+            x: textX,
+            y: topY - headingHeight,
+            width: textWidth,
+            height: headingHeight
+        )
+
+        let subheadingRect = CGRect(
+            x: textX + w * 0.02,
+            y: headingRect.minY - gap - subheadingHeight,
+            width: textWidth - w * 0.04,
+            height: subheadingHeight
+        )
+
+        return (headingRect, subheadingRect, headingFontSize, subheadingFontSize)
+    }
+
+    // MARK: - Standard Layout (center / left / right, optional tilt)
+
+    /// Default big device layout. 80% width centered, 65% for left/right with text beside.
+    private func calculateStandard(
+        tilt: Bool,
+        position: String,
+        canvasSize: CGSize,
+        hasSubheading: Bool
+    ) -> LayoutResult {
+        let w = canvasSize.width
+        let h = canvasSize.height
+        let margin = w * hMargin
+
+        switch position {
+        case "left":
+            // Device on left, text on right
+            let deviceWidth = w * 0.65
+            let (deviceRect, screenInset) = makeDevice(
+                width: deviceWidth,
+                x: -deviceWidth * 0.06,
+                y: -h * 0.05
+            )
+
+            let textX = deviceRect.maxX + margin
+            let textWidth = w - textX - margin
+            let textTopY = h * 0.68
+
+            let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+                canvasSize: canvasSize,
+                topY: textTopY,
+                textWidth: textWidth,
+                textX: textX,
+                hasSubheading: hasSubheading,
+                headingScale: 0.065,
+                subheadingScale: 0.035
+            )
+
+            return LayoutResult(
+                headingRect: headingRect,
+                subheadingRect: subheadingRect,
+                deviceRect: deviceRect,
+                screenInset: screenInset,
+                headingFontSize: headingFS,
+                subheadingFontSize: subheadingFS,
+                rotationAngle: tilt ? -8 : 0
+            )
+
+        case "right":
+            // Device on right, text on left
+            let deviceWidth = w * 0.65
+            let deviceX = w - deviceWidth + deviceWidth * 0.06
+            let (deviceRect, screenInset) = makeDevice(
+                width: deviceWidth,
+                x: deviceX,
+                y: -h * 0.05
+            )
+
+            let textX = margin
+            let textWidth = deviceRect.minX - margin - textX
+
+            let textTopY = h * 0.68
+
+            let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+                canvasSize: canvasSize,
+                topY: textTopY,
+                textWidth: textWidth,
+                textX: textX,
+                hasSubheading: hasSubheading,
+                headingScale: 0.065,
+                subheadingScale: 0.035
+            )
+
+            return LayoutResult(
+                headingRect: headingRect,
+                subheadingRect: subheadingRect,
+                deviceRect: deviceRect,
+                screenInset: screenInset,
+                headingFontSize: headingFS,
+                subheadingFontSize: subheadingFS,
+                rotationAngle: tilt ? 8 : 0
+            )
+
+        default:
+            // Center: big device at 80% width, text above
+            let deviceWidth = w * 0.80
+            let xOffset = tilt ? w * 0.03 : 0
+            let (deviceRect, screenInset) = makeDevice(
+                width: deviceWidth,
+                x: (w - deviceWidth) / 2 + xOffset,
+                y: -h * 0.08
+            )
+
+            let textTopY = min(deviceRect.maxY + h * 0.02, h - h * 0.06)
+            let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+                canvasSize: canvasSize,
+                topY: textTopY,
+                textWidth: w - 2 * margin,
+                textX: margin,
+                hasSubheading: hasSubheading
+            )
+
+            return LayoutResult(
+                headingRect: headingRect,
+                subheadingRect: subheadingRect,
+                deviceRect: deviceRect,
+                screenInset: screenInset,
+                headingFontSize: headingFS,
+                subheadingFontSize: subheadingFS,
+                rotationAngle: tilt ? -8 : 0
+            )
         }
     }
 
-    // MARK: - Center Device Layout
+    // MARK: - Full Bleed Layout
 
-    /// Device centered horizontally, text above.
-    /// Most universal, safe layout — works for any app.
-    private func calculateCenterDevice(canvasSize: CGSize, hasSubheading: Bool) -> LayoutResult {
+    /// Screenshot fills entire canvas edge-to-edge, no device frame.
+    /// Text overlaid at bottom with gradient scrim for readability.
+    private func calculateFullBleed(canvasSize: CGSize, hasSubheading: Bool) -> LayoutResult {
         let w = canvasSize.width
         let h = canvasSize.height
-        let margin = w * horizontalMarginRatio
-        let topMargin = h * topMarginRatio
+        let margin = w * hMargin
 
-        let textAreaRatio = hasSubheading ? textAreaRatioWithSub : textAreaRatioNoSub
-        let textAreaHeight = h * textAreaRatio
+        let scrimHeight = h * 0.35
+        let scrimRect = CGRect(x: 0, y: 0, width: w, height: scrimHeight)
 
-        // Text rects
-        let headingHeight = textAreaHeight * (hasSubheading ? 0.55 : 1.0)
-        let headingRect = CGRect(
-            x: margin,
-            y: h - topMargin - headingHeight,
-            width: w - 2 * margin,
-            height: headingHeight
+        let textTopY = scrimHeight * 0.85
+        let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+            canvasSize: canvasSize,
+            topY: textTopY,
+            textWidth: w - 2 * margin,
+            textX: margin,
+            hasSubheading: hasSubheading,
+            headingScale: 0.08,
+            subheadingScale: 0.04
         )
 
-        let subheadingHeight = textAreaHeight * 0.35
-        let subheadingRect = CGRect(
-            x: margin * 1.5,
-            y: headingRect.minY - subheadingHeight - h * 0.01,
-            width: w - 3 * margin,
-            height: subheadingHeight
-        )
-
-        // Device
-        let deviceWidth = w * deviceWidthRatio
-        let deviceAspect: CGFloat = 19.5 / 9.0  // iPhone aspect
-        let deviceHeight = deviceWidth * deviceAspect
-
-        let deviceY: CGFloat = 0  // Bottom-anchored, can extend below canvas
-        let deviceX = (w - deviceWidth) / 2
-
-        let deviceRect = CGRect(
-            x: deviceX,
-            y: deviceY,
-            width: deviceWidth,
-            height: deviceHeight
-        )
-
-        let border = deviceWidth * frameBorderRatio
-        let screenInset = CGRect(
-            x: border,
-            y: border,
-            width: deviceWidth - 2 * border,
-            height: deviceHeight - 2 * border
-        )
-
-        // Font sizes (proportional to canvas)
-        let headingFontSize = w * 0.07
-        let subheadingFontSize = w * 0.04
-
-        return LayoutResult(
+        var result = LayoutResult(
             headingRect: headingRect,
             subheadingRect: subheadingRect,
-            deviceRect: deviceRect,
-            screenInset: screenInset,
-            headingFontSize: headingFontSize,
-            subheadingFontSize: subheadingFontSize,
+            deviceRect: .zero,
+            screenInset: .zero,
+            headingFontSize: headingFS,
+            subheadingFontSize: subheadingFS,
             rotationAngle: 0
         )
-    }
-
-    // MARK: - Left Device Layout
-
-    /// Device on the left, text on the right side.
-    /// Good for longer text or when you want asymmetry.
-    private func calculateLeftDevice(canvasSize: CGSize, hasSubheading: Bool) -> LayoutResult {
-        let w = canvasSize.width
-        let h = canvasSize.height
-        let margin = w * horizontalMarginRatio
-
-        // Device on the left side
-        let deviceWidth = w * 0.52
-        let deviceAspect: CGFloat = 19.5 / 9.0
-        let deviceHeight = deviceWidth * deviceAspect
-
-        let deviceX = -deviceWidth * 0.08  // Slightly off-screen left
-        let deviceY: CGFloat = 0
-
-        let deviceRect = CGRect(
-            x: deviceX,
-            y: deviceY,
-            width: deviceWidth,
-            height: deviceHeight
-        )
-
-        let border = deviceWidth * frameBorderRatio
-        let screenInset = CGRect(
-            x: border,
-            y: border,
-            width: deviceWidth - 2 * border,
-            height: deviceHeight - 2 * border
-        )
-
-        // Text on the right side, vertically centered
-        let textX = deviceX + deviceWidth + margin
-        let textWidth = w - textX - margin
-        let textCenterY = h * 0.55
-
-        let headingHeight = h * 0.15
-        let headingRect = CGRect(
-            x: textX,
-            y: textCenterY,
-            width: textWidth,
-            height: headingHeight
-        )
-
-        let subheadingHeight = h * 0.12
-        let subheadingRect = CGRect(
-            x: textX,
-            y: textCenterY - subheadingHeight - h * 0.02,
-            width: textWidth,
-            height: subheadingHeight
-        )
-
-        let headingFontSize = w * 0.06
-        let subheadingFontSize = w * 0.035
-
-        return LayoutResult(
-            headingRect: headingRect,
-            subheadingRect: subheadingRect,
-            deviceRect: deviceRect,
-            screenInset: screenInset,
-            headingFontSize: headingFontSize,
-            subheadingFontSize: subheadingFontSize,
-            rotationAngle: 0
-        )
-    }
-
-    // MARK: - Tilted 3D Layout
-
-    /// Device with 3D perspective tilt, text above.
-    /// Creates a dynamic, modern feel.
-    private func calculateTilted(canvasSize: CGSize, hasSubheading: Bool) -> LayoutResult {
-        let w = canvasSize.width
-        let h = canvasSize.height
-        let margin = w * horizontalMarginRatio
-        let topMargin = h * topMarginRatio
-
-        let textAreaRatio = hasSubheading ? textAreaRatioWithSub : textAreaRatioNoSub
-        let textAreaHeight = h * textAreaRatio
-
-        // Text rects (same as center but slightly adjusted)
-        let headingHeight = textAreaHeight * (hasSubheading ? 0.55 : 1.0)
-        let headingRect = CGRect(
-            x: margin,
-            y: h - topMargin - headingHeight,
-            width: w - 2 * margin,
-            height: headingHeight
-        )
-
-        let subheadingHeight = textAreaHeight * 0.35
-        let subheadingRect = CGRect(
-            x: margin * 1.5,
-            y: headingRect.minY - subheadingHeight - h * 0.01,
-            width: w - 3 * margin,
-            height: subheadingHeight
-        )
-
-        // Tilted device — slightly larger and offset
-        let deviceWidth = w * 0.7
-        let deviceAspect: CGFloat = 19.5 / 9.0
-        let deviceHeight = deviceWidth * deviceAspect
-
-        let deviceX = (w - deviceWidth) / 2 + w * 0.03
-        let deviceY: CGFloat = -h * 0.05
-
-        let deviceRect = CGRect(
-            x: deviceX,
-            y: deviceY,
-            width: deviceWidth,
-            height: deviceHeight
-        )
-
-        let border = deviceWidth * frameBorderRatio
-        let screenInset = CGRect(
-            x: border,
-            y: border,
-            width: deviceWidth - 2 * border,
-            height: deviceHeight - 2 * border
-        )
-
-        let headingFontSize = w * 0.07
-        let subheadingFontSize = w * 0.04
-
-        return LayoutResult(
-            headingRect: headingRect,
-            subheadingRect: subheadingRect,
-            deviceRect: deviceRect,
-            screenInset: screenInset,
-            headingFontSize: headingFontSize,
-            subheadingFontSize: subheadingFontSize,
-            rotationAngle: -8  // 8 degrees counter-clockwise tilt
-        )
+        result.screenshotFillsCanvas = true
+        result.gradientScrimRect = scrimRect
+        return result
     }
 }

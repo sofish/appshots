@@ -67,7 +67,7 @@ struct ScreenshotGalleryView: View {
         VStack(spacing: 20) {
             Image(systemName: "photo.on.rectangle.angled")
                 .font(.system(size: 56))
-                .foregroundStyle(isDragOver ? .accent : .quaternary)
+                .foregroundStyle(isDragOver ? Color.accentColor : Color.secondary)
 
             VStack(spacing: 8) {
                 Text("Drop screenshots here")

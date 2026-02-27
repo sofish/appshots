@@ -87,7 +87,7 @@ struct GeneratingView: View {
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isComplete ? Color.green.opacity(0.1) : .quaternary.opacity(0.3))
+                    .fill(isComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
                     .frame(height: 60)
 
                 if isComplete {

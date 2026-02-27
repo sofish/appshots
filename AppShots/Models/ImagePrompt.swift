@@ -27,7 +27,7 @@ struct ImagePrompt: Identifiable, Codable, Equatable {
         self.id = UUID()
         self.screenIndex = try container.decode(Int.self, forKey: .screenIndex)
         self.prompt = try container.decode(String.self, forKey: .prompt)
-        self.negativePrompt = try container.decode(String.self, forKey: .negativePrompt)
+        self.negativePrompt = try container.decodeIfPresent(String.self, forKey: .negativePrompt) ?? ""
     }
 
     func encode(to encoder: Encoder) throws {

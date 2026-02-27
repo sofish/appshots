@@ -84,18 +84,18 @@ final class AppState: ObservableObject {
 
     // MARK: - Settings (persisted)
 
-    @AppStorage("llm_base_url") var llmBaseURL = "https://api.openai.com/v1"
+    @AppStorage("llm_base_url") var llmBaseURL = ""
     @AppStorage("llm_api_key") var llmAPIKey = ""
-    @AppStorage("llm_model") var llmModel = "gpt-4o"
-    @AppStorage("gemini_base_url") var geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+    @AppStorage("llm_model") var llmModel = ""
+    @AppStorage("gemini_base_url") var geminiBaseURL = ""
     @AppStorage("gemini_api_key") var geminiAPIKey = ""
-    @AppStorage("gemini_model") var geminiModel = "gemini-2.0-flash-exp"
+    @AppStorage("gemini_model") var geminiModel = ""
 
     init() {
         let llm = LLMService()
         self.llmService = llm
         self.planGenerator = PlanGenerator(llmService: llm)
-        self.promptTranslator = PromptTranslator(llmService: llm)
+        self.promptTranslator = PromptTranslator()
         self.backgroundGenerator = BackgroundGenerator()
     }
 
@@ -162,39 +162,55 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - Step 4: Generate Backgrounds (LLM Call #2 + Gemini × N)
+    // MARK: - Step 4: Generate Screenshots (Gemini × N)
 
     func startGeneration() {
         currentStep = .generating
         Task {
             isLoading = true
-            loadingMessage = "Translating to image prompts..."
+            loadingMessage = "Building image prompts..."
             await syncServiceConfigs()
 
             do {
-                // Step A: Translate visual directions to Gemini prompts
-                imagePrompts = try await promptTranslator.translate(plan: screenPlan)
+                // Step A: Build prompts from plan data (no LLM call)
+                imagePrompts = promptTranslator.translate(plan: screenPlan)
 
-                // Step B: Generate backgrounds in parallel
-                loadingMessage = "Generating backgrounds..."
+                // Step B: Build screenshot data map (screenIndex → screenshot data)
+                var screenshotDataMap: [Int: Data] = [:]
+                for screen in screenPlan.screens {
+                    if screen.screenshotMatch < screenshots.count {
+                        screenshotDataMap[screen.index] = screenshots[screen.screenshotMatch].imageData
+                    }
+                }
+
+                // Step C: Generate full compositions in parallel (Gemini with screenshots)
+                loadingMessage = "Generating screenshots..."
                 generationProgress = 0
 
                 let total = Double(imagePrompts.count)
                 backgroundImages = try await backgroundGenerator.generateAll(
-                    prompts: imagePrompts
+                    prompts: imagePrompts,
+                    screenshotDataMap: screenshotDataMap
                 ) { [weak self] index, data in
                     Task { @MainActor in
                         self?.backgroundImages[index] = data
                         self?.generationProgress = Double(self?.backgroundImages.count ?? 0) / total
-                        self?.loadingMessage = "Generated background \(self?.backgroundImages.count ?? 0)/\(Int(total))"
+                        self?.loadingMessage = "Generated screenshot \(self?.backgroundImages.count ?? 0)/\(Int(total))"
                     }
                 }
 
-                isLoading = false
-                currentStep = .composing
+                // Step D: Use Gemini output directly as final composed images
                 #if canImport(AppKit)
-                composeAll()
+                composedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
+                    guard let data = backgroundImages[screen.index] else { return nil }
+                    return NSImage(data: data)
+                }
                 #endif
+
+                isLoading = false
+                if !backgroundImages.isEmpty {
+                    currentStep = .export
+                }
             } catch {
                 isLoading = false
                 showError(error.localizedDescription)
@@ -217,6 +233,7 @@ final class AppState: ObservableObject {
                 guard screen.screenshotMatch < screenshots.count else { continue }
 
                 let screenshot = screenshots[screen.screenshotMatch].nsImage
+
                 do {
                     let composed: NSImage
                     if let bgData = backgroundImages[screen.index],
@@ -325,7 +342,7 @@ final class AppState: ObservableObject {
     }
     #endif
 
-    // MARK: - Regenerate single background
+    // MARK: - Regenerate single screenshot
 
     func regenerateBackground(screenIndex: Int) {
         guard screenIndex < screenPlan.screens.count else { return }
@@ -334,15 +351,22 @@ final class AppState: ObservableObject {
         let prompt = imagePrompts.first { $0.screenIndex == screen.index }
             ?? imagePrompts[min(screenIndex, imagePrompts.count - 1)]
 
+        // Get screenshot data for multimodal generation
+        let screenshotData: Data? = screen.screenshotMatch < screenshots.count
+            ? screenshots[screen.screenshotMatch].imageData
+            : nil
+
         Task {
-            loadingMessage = "Regenerating background \(screenIndex)..."
+            loadingMessage = "Regenerating screenshot \(screenIndex)..."
             await syncServiceConfigs()
 
             do {
-                let data = try await backgroundGenerator.generateSingle(prompt: prompt)
+                let data = try await backgroundGenerator.generateSingle(prompt: prompt, screenshotData: screenshotData)
                 backgroundImages[screen.index] = data
                 #if canImport(AppKit)
-                recomposeSingle(screenIndex: screenIndex)
+                if let image = NSImage(data: data), screenIndex < composedImages.count {
+                    composedImages[screenIndex] = image
+                }
                 #endif
             } catch {
                 showError(error.localizedDescription)

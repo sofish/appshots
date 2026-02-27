@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 @main
 struct AppShotsApp: App {
@@ -9,6 +12,15 @@ struct AppShotsApp: App {
             ContentView()
                 .environmentObject(appState)
                 .frame(minWidth: 960, minHeight: 640)
+                .onAppear {
+                    #if canImport(AppKit)
+                    NSApp.setActivationPolicy(.regular)
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                    }
+                    #endif
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1200, height: 800)
