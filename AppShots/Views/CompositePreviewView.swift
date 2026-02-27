@@ -171,8 +171,14 @@ struct CompositePreviewView: View {
 
     private var quickAdjustments: some View {
         let screenBinding = Binding<ScreenConfig>(
-            get: { appState.screenPlan.screens[selectedScreenIndex] },
+            get: {
+                guard selectedScreenIndex < appState.screenPlan.screens.count else {
+                    return ScreenConfig(index: 0, screenshotMatch: 0, heading: "", subheading: "")
+                }
+                return appState.screenPlan.screens[selectedScreenIndex]
+            },
             set: { newValue in
+                guard selectedScreenIndex < appState.screenPlan.screens.count else { return }
                 appState.screenPlan.screens[selectedScreenIndex] = newValue
             }
         )

@@ -254,8 +254,8 @@ struct ScreenshotGalleryView: View {
             appState.screenshots.append(item)
         } else if let data = pasteboard.data(forType: .tiff),
                   let image = NSImage(data: data),
-                  let pngData = image.tiffRepresentation,
-                  let bitmap = NSBitmapImageRep(data: pngData),
+                  let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
                   let png = bitmap.representation(using: .png, properties: [:]) {
             let item = ScreenshotItem(imageData: png, fileName: "pasted.png")
             appState.screenshots.append(item)

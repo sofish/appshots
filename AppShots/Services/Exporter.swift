@@ -48,25 +48,22 @@ struct Exporter {
         for (index, image) in images.enumerated() {
             for size in config.sizes {
                 let resized = resize(image: image, to: size)
-                let data = try encode(image: resized, format: config.format, quality: config.jpegQuality)
+                var data = try encode(image: resized, format: config.format, quality: config.jpegQuality)
 
                 let fileName = "\(sanitizeFileName(appName))_\(size.id)_\(index).\(config.format.fileExtension)"
                 let filePath = outputDirectory.appendingPathComponent(fileName)
 
-                try data.write(to: filePath)
-
+                // Compress before writing if file exceeds size limit
                 let fileSizeMB = Double(data.count) / (1024 * 1024)
-                if fileSizeMB > config.maxFileSizeMB {
-                    // Try to compress more for JPEG
-                    if config.format == .jpeg {
-                        let compressed = try compressToFit(
-                            image: resized,
-                            maxMB: config.maxFileSizeMB,
-                            initialQuality: config.jpegQuality
-                        )
-                        try compressed.write(to: filePath)
-                    }
+                if fileSizeMB > config.maxFileSizeMB && config.format == .jpeg {
+                    data = try compressToFit(
+                        image: resized,
+                        maxMB: config.maxFileSizeMB,
+                        initialQuality: config.jpegQuality
+                    )
                 }
+
+                try data.write(to: filePath)
 
                 let result = ExportResult(
                     filePath: filePath,
@@ -113,25 +110,45 @@ struct Exporter {
     // MARK: - Image Processing
 
     private func resize(image: NSImage, to deviceSize: DeviceSize) -> NSImage {
-        let targetSize = NSSize(width: deviceSize.width, height: deviceSize.height)
+        let targetWidth = deviceSize.width
+        let targetHeight = deviceSize.height
 
-        // If image is already the correct size, return as-is
+        // If image is already the correct pixel size, return as-is
         let imagePixelSize = image.pixelSize
-        if Int(imagePixelSize.width) == deviceSize.width && Int(imagePixelSize.height) == deviceSize.height {
+        if Int(imagePixelSize.width) == targetWidth && Int(imagePixelSize.height) == targetHeight {
             return image
         }
 
-        let newImage = NSImage(size: targetSize)
-        newImage.lockFocus()
+        // Use NSBitmapImageRep directly to control exact pixel dimensions
+        guard let bitmapRep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: targetWidth,
+            pixelsHigh: targetHeight,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            return image
+        }
+        bitmapRep.size = NSSize(width: targetWidth, height: targetHeight)
+
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmapRep)
         NSGraphicsContext.current?.imageInterpolation = .high
         image.draw(
-            in: NSRect(origin: .zero, size: targetSize),
+            in: NSRect(x: 0, y: 0, width: targetWidth, height: targetHeight),
             from: NSRect(origin: .zero, size: image.size),
             operation: .copy,
             fraction: 1.0
         )
-        newImage.unlockFocus()
+        NSGraphicsContext.restoreGraphicsState()
 
+        let newImage = NSImage(size: NSSize(width: targetWidth, height: targetHeight))
+        newImage.addRepresentation(bitmapRep)
         return newImage
     }
 

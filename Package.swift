@@ -18,10 +18,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Markdown", package: "swift-markdown")
             ],
-            path: "AppShots",
-            resources: [
-                .process("Resources")
-            ]
+            path: "AppShots"
         )
     ]
 )

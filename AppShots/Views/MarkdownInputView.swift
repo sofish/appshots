@@ -11,6 +11,8 @@ struct MarkdownInputView: View {
     @State private var showCopiedToast = false
     @State private var showFileImporter = false
     @State private var showSampleMarkdown = false
+    @State private var parsedDescriptor: AppDescriptor?
+    @State private var parseDebounceTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,6 +36,21 @@ struct MarkdownInputView: View {
 
             // Footer with action button
             footer
+        }
+        .onChange(of: appState.markdownText) { _ in
+            parseDebounceTask?.cancel()
+            parseDebounceTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+                guard !Task.isCancelled else { return }
+                let parser = MarkdownParser()
+                parsedDescriptor = try? parser.parse(appState.markdownText)
+            }
+        }
+        .onAppear {
+            if !appState.markdownText.isEmpty {
+                let parser = MarkdownParser()
+                parsedDescriptor = try? parser.parse(appState.markdownText)
+            }
         }
     }
 
@@ -136,8 +153,7 @@ struct MarkdownInputView: View {
 
     @ViewBuilder
     private var parsedPreview: some View {
-        let parser = MarkdownParser()
-        if let desc = try? parser.parse(appState.markdownText) {
+        if let desc = parsedDescriptor {
             VStack(alignment: .leading, spacing: 12) {
                 previewField("App Name", desc.name)
                 previewField("Tagline", desc.tagline)
@@ -202,8 +218,7 @@ struct MarkdownInputView: View {
     private var footer: some View {
         HStack {
             if !appState.markdownText.isEmpty {
-                let parser = MarkdownParser()
-                let isValid = (try? parser.parse(appState.markdownText)) != nil
+                let isValid = parsedDescriptor != nil
                 Label(
                     isValid ? "Valid Markdown" : "Invalid format",
                     systemImage: isValid ? "checkmark.circle.fill" : "xmark.circle.fill"

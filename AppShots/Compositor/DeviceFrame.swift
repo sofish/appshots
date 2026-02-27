@@ -60,13 +60,19 @@ struct DeviceFrame {
         cornerRadius: CGFloat? = nil
     ) -> NSImage {
         let radius = cornerRadius ?? size.width * 0.08
+        let width = Int(size.width)
+        let height = Int(size.height)
 
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            image.unlockFocus()
-            return image
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+        ) else {
+            return NSImage(size: size)
         }
 
         // Device body
@@ -103,8 +109,10 @@ struct DeviceFrame {
         context.addPath(bodyPath)
         context.strokePath()
 
-        image.unlockFocus()
-        return image
+        guard let cgImage = context.makeImage() else {
+            return NSImage(size: size)
+        }
+        return NSImage(cgImage: cgImage, size: size)
     }
 
     /// Generate a minimal outline frame.
@@ -114,13 +122,19 @@ struct DeviceFrame {
         cornerRadius: CGFloat? = nil
     ) -> NSImage {
         let radius = cornerRadius ?? size.width * 0.08
+        let width = Int(size.width)
+        let height = Int(size.height)
 
-        let image = NSImage(size: size)
-        image.lockFocus()
-
-        guard let context = NSGraphicsContext.current?.cgContext else {
-            image.unlockFocus()
-            return image
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+        ) else {
+            return NSImage(size: size)
         }
 
         let bodyRect = CGRect(origin: .zero, size: size).insetBy(dx: 2, dy: 2)
@@ -136,8 +150,10 @@ struct DeviceFrame {
         context.addPath(bodyPath)
         context.strokePath()
 
-        image.unlockFocus()
-        return image
+        guard let cgImage = context.makeImage() else {
+            return NSImage(size: size)
+        }
+        return NSImage(cgImage: cgImage, size: size)
     }
     #endif
 

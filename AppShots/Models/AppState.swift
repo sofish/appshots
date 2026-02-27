@@ -66,7 +66,9 @@ final class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var showError = false
     @Published var generationProgress: Double = 0
+    #if canImport(AppKit)
     @Published var exportResults: [Exporter.ExportResult] = []
+    #endif
 
     // MARK: - Services
 
@@ -190,7 +192,9 @@ final class AppState: ObservableObject {
 
                 isLoading = false
                 currentStep = .composing
+                #if canImport(AppKit)
                 composeAll()
+                #endif
             } catch {
                 isLoading = false
                 showError(error.localizedDescription)
@@ -324,8 +328,11 @@ final class AppState: ObservableObject {
     // MARK: - Regenerate single background
 
     func regenerateBackground(screenIndex: Int) {
-        guard screenIndex < imagePrompts.count else { return }
-        let prompt = imagePrompts[screenIndex]
+        guard screenIndex < screenPlan.screens.count else { return }
+        let screen = screenPlan.screens[screenIndex]
+        guard screen.index < imagePrompts.count else { return }
+        let prompt = imagePrompts.first { $0.screenIndex == screen.index }
+            ?? imagePrompts[min(screenIndex, imagePrompts.count - 1)]
 
         Task {
             loadingMessage = "Regenerating background \(screenIndex)..."
@@ -333,7 +340,7 @@ final class AppState: ObservableObject {
 
             do {
                 let data = try await backgroundGenerator.generateSingle(prompt: prompt)
-                backgroundImages[screenIndex] = data
+                backgroundImages[screen.index] = data
                 #if canImport(AppKit)
                 recomposeSingle(screenIndex: screenIndex)
                 #endif

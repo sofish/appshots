@@ -116,8 +116,16 @@ struct PlanPreviewView: View {
 
     private func binding(for index: Int) -> Binding<ScreenConfig> {
         Binding(
-            get: { appState.screenPlan.screens[index] },
-            set: { appState.screenPlan.screens[index] = $0 }
+            get: {
+                guard index < appState.screenPlan.screens.count else {
+                    return ScreenConfig(index: index, screenshotMatch: 0, heading: "", subheading: "")
+                }
+                return appState.screenPlan.screens[index]
+            },
+            set: {
+                guard index < appState.screenPlan.screens.count else { return }
+                appState.screenPlan.screens[index] = $0
+            }
         )
     }
 

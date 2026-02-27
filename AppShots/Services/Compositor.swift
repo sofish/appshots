@@ -69,7 +69,8 @@ struct Compositor {
             screenshot: input.screenshot,
             deviceRect: layout.deviceRect,
             screenInset: layout.screenInset,
-            rotation: layout.rotationAngle
+            rotation: layout.rotationAngle,
+            targetSize: input.targetSize
         )
 
         // Layer 4: Text
@@ -142,7 +143,8 @@ struct Compositor {
             screenshot: screenshot,
             deviceRect: layout.deviceRect,
             screenInset: layout.screenInset,
-            rotation: layout.rotationAngle
+            rotation: layout.rotationAngle,
+            targetSize: targetSize
         )
 
         // Layer 4: Text
@@ -210,7 +212,8 @@ struct Compositor {
         screenshot: NSImage,
         deviceRect: CGRect,
         screenInset: CGRect,
-        rotation: CGFloat
+        rotation: CGFloat,
+        targetSize: DeviceSize = .iPhone6_7
     ) {
         context.saveGState()
 
@@ -242,7 +245,7 @@ struct Compositor {
         }
 
         // Draw device frame overlay (if available)
-        if let frameImage = deviceFrame.loadFrame()?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+        if let frameImage = deviceFrame.loadFrame(for: targetSize)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             context.draw(frameImage, in: deviceRect)
         } else {
             // Fallback: draw a simple device bezel
@@ -286,6 +289,17 @@ struct Compositor {
     private func hexToColor(_ hex: String) -> CGColor {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+
+        // Expand 3-digit hex (e.g., "fff" → "ffffff")
+        if hexSanitized.count == 3 {
+            hexSanitized = hexSanitized.map { "\($0)\($0)" }.joined()
+        }
+
+        // Validate: must be exactly 6 hex characters
+        guard hexSanitized.count == 6,
+              hexSanitized.allSatisfy({ $0.isHexDigit }) else {
+            return CGColor(gray: 0, alpha: 1.0)
+        }
 
         var rgb: UInt64 = 0
         Scanner(string: hexSanitized).scanHexInt64(&rgb)

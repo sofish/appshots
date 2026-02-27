@@ -17,7 +17,7 @@ struct PlanGenerator {
         screenshotData: [Data]
     ) async throws -> ScreenPlan {
         let systemPrompt = SystemPrompts.planGeneration
-        let userMessage = buildUserMessage(from: descriptor)
+        let userMessage = buildUserMessage(from: descriptor, screenshotCount: screenshotData.count)
 
         let response: String
         if screenshotData.isEmpty {
@@ -40,7 +40,7 @@ struct PlanGenerator {
 
     // MARK: - Build user message from descriptor
 
-    private func buildUserMessage(from desc: AppDescriptor) -> String {
+    private func buildUserMessage(from desc: AppDescriptor, screenshotCount: Int) -> String {
         var parts: [String] = []
 
         parts.append("# \(desc.name)")
@@ -72,9 +72,11 @@ struct PlanGenerator {
             parts.append(proof)
         }
 
+        let screenCount = min(screenshotCount, desc.features.count)
         parts.append("")
-        parts.append("Number of screenshots provided: \(desc.features.count)")
-        parts.append("Please generate a screenshot plan with \(desc.features.count) screens.")
+        parts.append("Number of screenshots provided: \(screenshotCount)")
+        parts.append("Number of features described: \(desc.features.count)")
+        parts.append("Please generate a screenshot plan with exactly \(screenCount) screens.")
 
         return parts.joined(separator: "\n")
     }

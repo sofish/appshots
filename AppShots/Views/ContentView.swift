@@ -45,6 +45,7 @@ struct ContentView: View {
 
 struct StepSidebar: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,9 +82,7 @@ struct StepSidebar: View {
 
             // Settings button
             Button {
-                #if os(macOS)
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                #endif
+                openSettings()
             } label: {
                 Label("Settings", systemImage: "gear")
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -72,7 +72,13 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     case jpeg = "JPEG"
 
     var id: String { rawValue }
-    var fileExtension: String { rawValue.lowercased() }
+
+    var fileExtension: String {
+        switch self {
+        case .png: return "png"
+        case .jpeg: return "jpg"
+        }
+    }
 }
 
 // MARK: - Export Config
@@ -81,39 +87,8 @@ struct ExportConfig {
     var sizes: [DeviceSize] = DeviceSize.defaultSizes
     var format: ExportFormat = .png
     var jpegQuality: Double = 0.9
-    var maxFileSizeMB: Double = 8.0    // App Store limit
+    var maxFileSizeMB: Double = 10.0   // App Store limit
 
     static let `default` = ExportConfig()
 }
 
-// MARK: - Screen State
-
-enum ScreenState: Equatable {
-    case empty
-    case planning
-    case planned(ScreenConfig)
-    case generatingPrompt
-    case generatingBackground
-    case compositing
-    case composed(Data)     // PNG data of the composed image
-    case failed(String)
-
-    static func == (lhs: ScreenState, rhs: ScreenState) -> Bool {
-        switch (lhs, rhs) {
-        case (.empty, .empty),
-             (.planning, .planning),
-             (.generatingPrompt, .generatingPrompt),
-             (.generatingBackground, .generatingBackground),
-             (.compositing, .compositing):
-            return true
-        case (.planned(let a), .planned(let b)):
-            return a == b
-        case (.composed(let a), .composed(let b)):
-            return a == b
-        case (.failed(let a), .failed(let b)):
-            return a == b
-        default:
-            return false
-        }
-    }
-}
