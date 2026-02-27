@@ -111,7 +111,6 @@ private struct DescriptorWalker: MarkupWalker {
     // State tracking
     private var currentH2Section = ""
     private var currentH3Name = ""
-    private var collectingParagraph = false
 
     mutating func visitHeading(_ heading: Heading) {
         let text = heading.plainText
@@ -220,7 +219,7 @@ private extension Markup {
         for child in children {
             if let text = child as? Markdown.Text {
                 result += text.string
-            } else if let softBreak = child as? SoftBreak {
+            } else if child is SoftBreak {
                 result += " "
             } else if let code = child as? InlineCode {
                 result += code.code

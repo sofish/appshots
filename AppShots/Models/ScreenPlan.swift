@@ -100,10 +100,32 @@ extension ScreenPlan {
 }
 
 extension ScreenConfig {
+    // Only include keys the LLM will produce (no `id` — we generate it locally)
     enum CodingKeys: String, CodingKey {
-        case id, index
+        case index
         case screenshotMatch = "screenshot_match"
         case heading, subheading, layout
         case visualDirection = "visual_direction"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = UUID() // Auto-generate; LLM won't provide this
+        self.index = try container.decode(Int.self, forKey: .index)
+        self.screenshotMatch = try container.decode(Int.self, forKey: .screenshotMatch)
+        self.heading = try container.decode(String.self, forKey: .heading)
+        self.subheading = try container.decode(String.self, forKey: .subheading)
+        self.layout = try container.decode(LayoutType.self, forKey: .layout)
+        self.visualDirection = try container.decode(String.self, forKey: .visualDirection)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(index, forKey: .index)
+        try container.encode(screenshotMatch, forKey: .screenshotMatch)
+        try container.encode(heading, forKey: .heading)
+        try container.encode(subheading, forKey: .subheading)
+        try container.encode(layout, forKey: .layout)
+        try container.encode(visualDirection, forKey: .visualDirection)
     }
 }

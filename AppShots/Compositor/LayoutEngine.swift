@@ -86,7 +86,6 @@ struct LayoutEngine {
         let deviceWidth = w * deviceWidthRatio
         let deviceAspect: CGFloat = 19.5 / 9.0  // iPhone aspect
         let deviceHeight = deviceWidth * deviceAspect
-        let spacing = h * textDeviceSpacingRatio
 
         let deviceY: CGFloat = 0  // Bottom-anchored, can extend below canvas
         let deviceX = (w - deviceWidth) / 2

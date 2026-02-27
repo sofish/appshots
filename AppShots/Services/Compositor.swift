@@ -231,13 +231,14 @@ struct Compositor {
                 height: screenInset.height
             )
 
-            // Clip to rounded rect for screen
+            // Clip to rounded rect for screen (save/restore state to undo clip)
+            context.saveGState()
             let cornerRadius: CGFloat = 20
             let clipPath = CGPath(roundedRect: screenRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
             context.addPath(clipPath)
             context.clip()
             context.draw(cgScreenshot, in: screenRect)
-            context.resetClip()
+            context.restoreGState()
         }
 
         // Draw device frame overlay (if available)

@@ -131,38 +131,26 @@ struct TextRenderer {
     // MARK: - Font Creation
 
     private func createFont(size: CGFloat, weight: FontWeight) -> CTFont {
-        // Try SF Pro Display first (macOS system)
-        let fontName: String
+        // Use the system font API which reliably returns SF Pro on macOS
+        let ctWeight: CGFloat
         switch weight {
-        case .bold:
-            fontName = "SFProDisplay-Bold"
-        case .semibold:
-            fontName = "SFProDisplay-Semibold"
-        case .regular:
-            fontName = "SFProDisplay-Regular"
-        case .medium:
-            fontName = "SFProDisplay-Medium"
+        case .bold: ctWeight = 0.4       // UIFontWeightBold equivalent
+        case .semibold: ctWeight = 0.3
+        case .medium: ctWeight = 0.23
+        case .regular: ctWeight = 0.0
         }
 
-        if let font = CTFontCreateWithName(fontName as CFString, size, nil) as CTFont? {
-            return font
-        }
+        // CTFontCreateUIFontForLanguage returns the system UI font (SF Pro)
+        let baseFont = CTFontCreateUIFontForLanguage(.system, size, nil)
+            ?? CTFontCreateWithName("Helvetica Neue" as CFString, size, nil)
 
-        // Fallback to system font
-        let traits: CTFontSymbolicTraits
-        switch weight {
-        case .bold:
-            traits = .boldTrait
-        default:
-            traits = []
-        }
+        // Apply weight via traits
+        let traits = [kCTFontWeightTrait: ctWeight] as CFDictionary
+        let descriptor = CTFontDescriptorCreateWithAttributes(
+            [kCTFontTraitsAttribute: traits] as CFDictionary
+        )
 
-        let descriptor = CTFontDescriptorCreateWithAttributes([
-            kCTFontFamilyNameAttribute: "Helvetica Neue" as CFString,
-            kCTFontTraitsAttribute: [kCTFontSymbolicTrait: traits.rawValue] as CFDictionary
-        ] as CFDictionary)
-
-        return CTFontCreateWithFontDescriptor(descriptor, size, nil)
+        return CTFontCreateCopyWithAttributes(baseFont, size, nil, descriptor)
     }
 
     enum FontWeight {

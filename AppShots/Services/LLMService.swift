@@ -113,7 +113,7 @@ actor LLMService {
 
     private func post(path: String, body: [String: Any]) async throws -> Data {
         let urlString = config.baseURL.hasSuffix("/")
-            ? config.baseURL + path.dropFirst()
+            ? config.baseURL + String(path.dropFirst())
             : config.baseURL + path
 
         guard let url = URL(string: urlString) else {
@@ -131,7 +131,6 @@ actor LLMService {
 
         if let httpResponse = response as? HTTPURLResponse,
            !(200...299).contains(httpResponse.statusCode) {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
             throw LLMError.invalidResponse(httpResponse.statusCode)
         }
 
