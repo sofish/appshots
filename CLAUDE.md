@@ -1,0 +1,2 @@
+- [README.md](README.md) — Project overview, setup, and configuration
+- [docs/workflow.md](docs/workflow.md) — Pipeline architecture, data flow, and project layout
