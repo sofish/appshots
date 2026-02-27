@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(AppKit)
-import AppKit
-#endif
 
 /// Unified HTTP client for LLM API calls.
 /// Supports any OpenAI-compatible endpoint (configurable base URL).

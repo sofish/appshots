@@ -96,10 +96,19 @@ struct TextRenderer {
         var origins = [CGPoint](repeating: .zero, count: lineCount)
         CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
 
+        // Get lines as a Swift array for safe access
+        let lines: [CTLine] = (0..<lineCount).compactMap { i in
+            guard let rawPtr = CFArrayGetValueAtIndex(frameLines, i) else { return nil }
+            return unsafeBitCast(rawPtr, to: CTLine.self)
+        }
+        guard !lines.isEmpty else {
+            context.restoreGState()
+            return
+        }
+
         // Calculate total text height
         var totalHeight: CGFloat = 0
-        for i in 0..<lineCount {
-            let line = unsafeBitCast(CFArrayGetValueAtIndex(frameLines, i), to: CTLine.self)
+        for line in lines {
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
             var leading: CGFloat = 0
@@ -111,8 +120,8 @@ struct TextRenderer {
         let verticalOffset = (rect.height - totalHeight) / 2
 
         // Draw each line
-        for i in 0..<lineCount {
-            let line = unsafeBitCast(CFArrayGetValueAtIndex(frameLines, i), to: CTLine.self)
+        for i in 0..<lines.count {
+            let line = lines[i]
             var ascent: CGFloat = 0
             var descent: CGFloat = 0
             CTLineGetTypographicBounds(line, &ascent, &descent, nil)
@@ -168,7 +177,10 @@ struct TextRenderer {
         while size > minSize {
             let font = createFont(size: size, weight: isBold ? .bold : .regular)
             let attributes = [kCTFontAttributeName: font] as [CFString: Any]
-            let attrString = CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary)!
+            guard let attrString = CFAttributedStringCreate(nil, text as CFString, attributes as CFDictionary) else {
+                size -= 2
+                continue
+            }
 
             let framesetter = CTFramesetterCreateWithAttributedString(attrString)
             let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(

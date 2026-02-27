@@ -9,8 +9,6 @@ import AppKit
 struct MarkdownInputView: View {
     @EnvironmentObject var appState: AppState
     @State private var showCopiedToast = false
-    @State private var showFileImporter = false
-    @State private var showSampleMarkdown = false
     @State private var parsedDescriptor: AppDescriptor?
     @State private var parseDebounceTask: Task<Void, Never>?
 
@@ -37,7 +35,7 @@ struct MarkdownInputView: View {
             // Footer with action button
             footer
         }
-        .onChange(of: appState.markdownText) { _ in
+        .onChange(of: appState.markdownText) { _, _ in
             parseDebounceTask?.cancel()
             parseDebounceTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
@@ -51,6 +49,10 @@ struct MarkdownInputView: View {
                 let parser = MarkdownParser()
                 parsedDescriptor = try? parser.parse(appState.markdownText)
             }
+        }
+        .onDisappear {
+            parseDebounceTask?.cancel()
+            parseDebounceTask = nil
         }
     }
 

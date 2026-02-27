@@ -85,9 +85,16 @@ struct PromptTranslator {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        if let start = text.firstIndex(where: { $0 == "{" || $0 == "[" }),
-           let end = text.lastIndex(where: { $0 == "}" || $0 == "]" }) {
-            return String(text[start...end])
+        // Try finding matched JSON object {...} or array [...]
+        if let objStart = text.firstIndex(of: "{"),
+           let objEnd = text.lastIndex(of: "}"),
+           objStart < objEnd {
+            return String(text[objStart...objEnd])
+        }
+        if let arrStart = text.firstIndex(of: "["),
+           let arrEnd = text.lastIndex(of: "]"),
+           arrStart < arrEnd {
+            return String(text[arrStart...arrEnd])
         }
 
         return text.trimmingCharacters(in: .whitespacesAndNewlines)

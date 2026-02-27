@@ -299,6 +299,17 @@ extension Color {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
 
+        // Expand 3-digit hex (e.g. "f0a" → "ff00aa")
+        if hexSanitized.count == 3 {
+            hexSanitized = hexSanitized.map { "\($0)\($0)" }.joined()
+        }
+
+        guard hexSanitized.count == 6,
+              hexSanitized.allSatisfy({ $0.isHexDigit }) else {
+            self.init(red: 0, green: 0, blue: 0)
+            return
+        }
+
         var rgb: UInt64 = 0
         Scanner(string: hexSanitized).scanHexInt64(&rgb)
 
