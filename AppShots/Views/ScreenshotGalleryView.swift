@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 struct ScreenshotGalleryView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDragOver = false
+    @State private var draggingItemID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -116,6 +117,16 @@ struct ScreenshotGalleryView: View {
                 ], spacing: 16) {
                     ForEach(Array(appState.screenshots.enumerated()), id: \.element.id) { index, item in
                         ScreenshotCard(item: item, index: index)
+                            .opacity(draggingItemID == item.id ? 0.4 : 1.0)
+                            .onDrag {
+                                draggingItemID = item.id
+                                return NSItemProvider(object: item.id.uuidString as NSString)
+                            }
+                            .onDrop(of: [.text], delegate: ScreenshotReorderDelegate(
+                                item: item,
+                                items: $appState.screenshots,
+                                draggingItemID: $draggingItemID
+                            ))
                     }
 
                     // Add more button
@@ -274,6 +285,35 @@ struct ScreenshotGalleryView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Reorder Delegate
+
+struct ScreenshotReorderDelegate: DropDelegate {
+    let item: ScreenshotItem
+    @Binding var items: [ScreenshotItem]
+    @Binding var draggingItemID: UUID?
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingItemID = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragID = draggingItemID,
+              dragID != item.id,
+              let fromIndex = items.firstIndex(where: { $0.id == dragID }),
+              let toIndex = items.firstIndex(where: { $0.id == item.id }) else {
+            return
+        }
+        withAnimation(.default) {
+            items.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }
 

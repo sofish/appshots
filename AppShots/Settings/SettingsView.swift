@@ -4,6 +4,14 @@ import SwiftUI
 /// Accessible from the app menu (⌘,) or sidebar settings button.
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @State private var llmTestResult: TestResult?
+    @State private var geminiTestResult: TestResult?
+    @State private var isTesting = false
+
+    enum TestResult {
+        case success(String)
+        case failure(String)
+    }
 
     var body: some View {
         TabView {
@@ -57,16 +65,57 @@ struct SettingsView: View {
                         testLLMConnection()
                     }
                     .buttonStyle(.bordered)
+                    .disabled(isTesting || appState.llmAPIKey.isEmpty)
 
                     Button("Test Gemini Connection") {
                         testGeminiConnection()
                     }
                     .buttonStyle(.bordered)
+                    .disabled(isTesting || appState.geminiAPIKey.isEmpty)
                     Spacer()
+                }
+
+                if isTesting {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Testing...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                }
+
+                if let result = llmTestResult {
+                    testResultView("LLM", result: result)
+                }
+
+                if let result = geminiTestResult {
+                    testResultView("Gemini", result: result)
                 }
             }
         }
         .padding()
+    }
+
+    private func testResultView(_ label: String, result: TestResult) -> some View {
+        HStack(spacing: 6) {
+            switch result {
+            case .success(let msg):
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("\(label): \(msg)")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            case .failure(let msg):
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text("\(label): \(msg)")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
     }
 
     // MARK: - About Tab
@@ -108,16 +157,59 @@ struct SettingsView: View {
     // MARK: - Actions
 
     private func testLLMConnection() {
+        llmTestResult = nil
+        isTesting = true
         Task {
             await appState.syncServiceConfigs()
-            // A quick test call would go here
+            do {
+                let url = appState.llmBaseURL.hasSuffix("/")
+                    ? appState.llmBaseURL + "models"
+                    : appState.llmBaseURL + "/models"
+                guard let endpoint = URL(string: url) else {
+                    llmTestResult = .failure("Invalid URL")
+                    isTesting = false
+                    return
+                }
+                var request = URLRequest(url: endpoint)
+                request.setValue("Bearer \(appState.llmAPIKey)", forHTTPHeaderField: "Authorization")
+                request.timeoutInterval = 10
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    llmTestResult = .success("Connected (HTTP \(http.statusCode))")
+                } else if let http = response as? HTTPURLResponse {
+                    llmTestResult = .failure("HTTP \(http.statusCode)")
+                }
+            } catch {
+                llmTestResult = .failure(error.localizedDescription)
+            }
+            isTesting = false
         }
     }
 
     private func testGeminiConnection() {
+        geminiTestResult = nil
+        isTesting = true
         Task {
             await appState.syncServiceConfigs()
-            // A quick test call would go here
+            do {
+                let url = "\(appState.geminiBaseURL)/models/\(appState.geminiModel)?key=\(appState.geminiAPIKey)"
+                guard let endpoint = URL(string: url) else {
+                    geminiTestResult = .failure("Invalid URL")
+                    isTesting = false
+                    return
+                }
+                var request = URLRequest(url: endpoint)
+                request.timeoutInterval = 10
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    geminiTestResult = .success("Connected (HTTP \(http.statusCode))")
+                } else if let http = response as? HTTPURLResponse {
+                    geminiTestResult = .failure("HTTP \(http.statusCode)")
+                }
+            } catch {
+                geminiTestResult = .failure(error.localizedDescription)
+            }
+            isTesting = false
         }
     }
 }
