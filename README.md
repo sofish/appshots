@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icon.png" width="128" height="128" alt="AppShots icon">
+</p>
+
 # AppShots
 
 Drop in screenshots + a Markdown description, get professional App Store screenshots powered by AI. Native macOS app.
