@@ -1,0 +1,136 @@
+import SwiftUI
+
+/// Step 4: Background generation progress view.
+/// Shows progress as Gemini generates backgrounds in parallel.
+struct GeneratingView: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            progressContent
+            Divider()
+            footer
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Generating Backgrounds")
+                    .font(.title2.bold())
+                Text("AI is creating custom backgrounds for each screenshot.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding()
+    }
+
+    // MARK: - Progress Content
+
+    private var progressContent: some View {
+        VStack(spacing: 32) {
+            Spacer()
+
+            // Main progress indicator
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .stroke(.quaternary, lineWidth: 8)
+                        .frame(width: 120, height: 120)
+
+                    Circle()
+                        .trim(from: 0, to: appState.generationProgress)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .frame(width: 120, height: 120)
+                        .rotationEffect(.degrees(-90))
+                        .animation(.easeInOut(duration: 0.5), value: appState.generationProgress)
+
+                    VStack(spacing: 2) {
+                        Text("\(Int(appState.generationProgress * 100))%")
+                            .font(.title2.bold().monospacedDigit())
+                        Text("complete")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text(appState.loadingMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            // Per-screen progress
+            if !appState.screenPlan.screens.isEmpty {
+                LazyVGrid(columns: [
+                    GridItem(.adaptive(minimum: 100, maximum: 150), spacing: 12)
+                ], spacing: 12) {
+                    ForEach(appState.screenPlan.screens) { screen in
+                        screenProgressCard(screen)
+                    }
+                }
+                .padding(.horizontal)
+            }
+
+            Spacer()
+        }
+    }
+
+    private func screenProgressCard(_ screen: ScreenConfig) -> some View {
+        let isComplete = appState.backgroundImages[screen.index] != nil
+
+        return VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isComplete ? Color.green.opacity(0.1) : .quaternary.opacity(0.3))
+                    .frame(height: 60)
+
+                if isComplete {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.green)
+                } else if appState.isLoading {
+                    ProgressView()
+                } else {
+                    Image(systemName: "circle")
+                        .font(.title2)
+                        .foregroundStyle(.quaternary)
+                }
+            }
+
+            Text("Screen \(screen.index + 1)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack {
+            Button("Back to Plan") {
+                appState.goToStep(.planPreview)
+            }
+            .buttonStyle(.bordered)
+
+            Spacer()
+
+            if !appState.isLoading && appState.generationProgress >= 1.0 {
+                Button("Continue to Compose") {
+                    appState.currentStep = .composing
+                    #if canImport(AppKit)
+                    appState.composeAll()
+                    #endif
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+        }
+        .padding()
+    }
+}

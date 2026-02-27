@@ -1,0 +1,402 @@
+import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
+import SwiftUI
+
+/// Central state management for the AppShots pipeline.
+/// Drives the UI through the 6-step workflow:
+/// ① Markdown → ② Screenshots → ③ Preview Plan → ④ Generate Backgrounds → ⑤ Compose → ⑥ Export
+@MainActor
+final class AppState: ObservableObject {
+
+    // MARK: - Workflow Step
+
+    enum Step: Int, CaseIterable, Identifiable {
+        case markdown = 0
+        case screenshots
+        case planPreview
+        case generating
+        case composing
+        case export
+
+        var id: Int { rawValue }
+
+        var title: String {
+            switch self {
+            case .markdown: return "Markdown"
+            case .screenshots: return "Screenshots"
+            case .planPreview: return "Preview Plan"
+            case .generating: return "Generate"
+            case .composing: return "Compose"
+            case .export: return "Export"
+            }
+        }
+
+        var iconName: String {
+            switch self {
+            case .markdown: return "doc.text"
+            case .screenshots: return "photo.on.rectangle"
+            case .planPreview: return "rectangle.3.group"
+            case .generating: return "sparkles"
+            case .composing: return "paintbrush"
+            case .export: return "square.and.arrow.up"
+            }
+        }
+    }
+
+    // MARK: - Published State
+
+    @Published var currentStep: Step = .markdown
+    @Published var markdownText: String = ""
+    @Published var descriptor: AppDescriptor = .empty
+    @Published var screenshots: [ScreenshotItem] = []
+    @Published var screenPlan: ScreenPlan = .empty
+    @Published var imagePrompts: [ImagePrompt] = []
+    @Published var backgroundImages: [Int: Data] = [:]
+    #if canImport(AppKit)
+    @Published var composedImages: [NSImage] = []
+    #endif
+    @Published var exportConfig: ExportConfig = .default
+    @Published var selectedSizes: Set<String> = Set(DeviceSize.defaultSizes.map(\.id))
+
+    // UI State
+    @Published var isLoading = false
+    @Published var loadingMessage = ""
+    @Published var errorMessage: String?
+    @Published var showError = false
+    @Published var generationProgress: Double = 0
+    @Published var exportResults: [Exporter.ExportResult] = []
+
+    // MARK: - Services
+
+    private let parser = MarkdownParser()
+    private let llmService: LLMService
+    private let planGenerator: PlanGenerator
+    private let promptTranslator: PromptTranslator
+    private let backgroundGenerator: BackgroundGenerator
+    #if canImport(AppKit)
+    private let compositor = Compositor()
+    private let exporter = Exporter()
+    #endif
+
+    // MARK: - Settings (persisted)
+
+    @AppStorage("llm_base_url") var llmBaseURL = "https://api.openai.com/v1"
+    @AppStorage("llm_api_key") var llmAPIKey = ""
+    @AppStorage("llm_model") var llmModel = "gpt-4o"
+    @AppStorage("gemini_base_url") var geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+    @AppStorage("gemini_api_key") var geminiAPIKey = ""
+    @AppStorage("gemini_model") var geminiModel = "gemini-2.0-flash-exp"
+
+    init() {
+        let llm = LLMService()
+        self.llmService = llm
+        self.planGenerator = PlanGenerator(llmService: llm)
+        self.promptTranslator = PromptTranslator(llmService: llm)
+        self.backgroundGenerator = BackgroundGenerator()
+    }
+
+    // MARK: - Update service configs from @AppStorage
+
+    func syncServiceConfigs() async {
+        let llmConfig = LLMService.Configuration(
+            baseURL: llmBaseURL,
+            apiKey: llmAPIKey,
+            model: llmModel
+        )
+        await llmService.updateConfig(llmConfig)
+
+        let geminiConfig = BackgroundGenerator.Configuration(
+            baseURL: geminiBaseURL,
+            apiKey: geminiAPIKey,
+            model: geminiModel
+        )
+        await backgroundGenerator.updateConfig(geminiConfig)
+    }
+
+    // MARK: - Step 1: Parse Markdown
+
+    func parseMarkdown() {
+        do {
+            descriptor = try parser.parse(markdownText)
+            errorMessage = nil
+            currentStep = .screenshots
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Step 2: Screenshots are managed by the view (drag & drop)
+
+    func proceedToPlanning() {
+        guard !screenshots.isEmpty else {
+            showError("Please add at least one screenshot.")
+            return
+        }
+        currentStep = .planPreview
+        generatePlan()
+    }
+
+    // MARK: - Step 3: Generate Plan (LLM Call #1)
+
+    func generatePlan() {
+        Task {
+            isLoading = true
+            loadingMessage = "Generating screenshot plan..."
+            await syncServiceConfigs()
+
+            do {
+                let screenshotData = screenshots.map(\.imageData)
+                screenPlan = try await planGenerator.generate(
+                    descriptor: descriptor,
+                    screenshotData: screenshotData
+                )
+                isLoading = false
+            } catch {
+                isLoading = false
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Step 4: Generate Backgrounds (LLM Call #2 + Gemini × N)
+
+    func startGeneration() {
+        currentStep = .generating
+        Task {
+            isLoading = true
+            loadingMessage = "Translating to image prompts..."
+            await syncServiceConfigs()
+
+            do {
+                // Step A: Translate visual directions to Gemini prompts
+                imagePrompts = try await promptTranslator.translate(plan: screenPlan)
+
+                // Step B: Generate backgrounds in parallel
+                loadingMessage = "Generating backgrounds..."
+                generationProgress = 0
+
+                let total = Double(imagePrompts.count)
+                backgroundImages = try await backgroundGenerator.generateAll(
+                    prompts: imagePrompts
+                ) { [weak self] index, data in
+                    Task { @MainActor in
+                        self?.backgroundImages[index] = data
+                        self?.generationProgress = Double(self?.backgroundImages.count ?? 0) / total
+                        self?.loadingMessage = "Generated background \(self?.backgroundImages.count ?? 0)/\(Int(total))"
+                    }
+                }
+
+                isLoading = false
+                currentStep = .composing
+                composeAll()
+            } catch {
+                isLoading = false
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Step 5: Compose (Core Graphics, no LLM)
+
+    #if canImport(AppKit)
+    func composeAll() {
+        Task {
+            isLoading = true
+            loadingMessage = "Compositing screenshots..."
+
+            composedImages = []
+            let targetSize = DeviceSize.iPhone6_7
+
+            for screen in screenPlan.screens {
+                guard screen.screenshotMatch < screenshots.count else { continue }
+
+                let screenshot = screenshots[screen.screenshotMatch].nsImage
+                do {
+                    let composed: NSImage
+                    if let bgData = backgroundImages[screen.index],
+                       let bgImage = NSImage(data: bgData) {
+                        composed = try compositor.compose(input: .init(
+                            config: screen,
+                            screenshot: screenshot,
+                            backgroundImage: bgImage,
+                            colors: screenPlan.colors,
+                            targetSize: targetSize
+                        ))
+                    } else {
+                        composed = try compositor.composeWithGradient(
+                            config: screen,
+                            screenshot: screenshot,
+                            colors: screenPlan.colors,
+                            targetSize: targetSize
+                        )
+                    }
+                    composedImages.append(composed)
+                } catch {
+                    showError("Failed to compose screen \(screen.index): \(error.localizedDescription)")
+                }
+            }
+
+            isLoading = false
+            if !composedImages.isEmpty {
+                currentStep = .export
+            }
+        }
+    }
+
+    // MARK: - Step 6: Export
+
+    func exportAll(to directory: URL) {
+        Task {
+            isLoading = true
+            loadingMessage = "Exporting..."
+
+            do {
+                let sizes = DeviceSize.allSizes.filter { selectedSizes.contains($0.id) }
+                let config = ExportConfig(
+                    sizes: sizes,
+                    format: exportConfig.format,
+                    jpegQuality: exportConfig.jpegQuality
+                )
+
+                exportResults = try exporter.exportAll(
+                    images: composedImages,
+                    appName: screenPlan.appName,
+                    config: config,
+                    outputDirectory: directory
+                ) { completed, total in
+                    Task { @MainActor in
+                        self.generationProgress = Double(completed) / Double(total)
+                        self.loadingMessage = "Exported \(completed)/\(total)"
+                    }
+                }
+
+                isLoading = false
+            } catch {
+                isLoading = false
+                showError(error.localizedDescription)
+            }
+        }
+    }
+    #endif
+
+    // MARK: - Recompose Single Screen
+
+    #if canImport(AppKit)
+    func recomposeSingle(screenIndex: Int) {
+        guard screenIndex < screenPlan.screens.count else { return }
+        let screen = screenPlan.screens[screenIndex]
+        guard screen.screenshotMatch < screenshots.count else { return }
+
+        let screenshot = screenshots[screen.screenshotMatch].nsImage
+        let targetSize = DeviceSize.iPhone6_7
+
+        do {
+            let composed: NSImage
+            if let bgData = backgroundImages[screen.index],
+               let bgImage = NSImage(data: bgData) {
+                composed = try compositor.compose(input: .init(
+                    config: screen,
+                    screenshot: screenshot,
+                    backgroundImage: bgImage,
+                    colors: screenPlan.colors,
+                    targetSize: targetSize
+                ))
+            } else {
+                composed = try compositor.composeWithGradient(
+                    config: screen,
+                    screenshot: screenshot,
+                    colors: screenPlan.colors,
+                    targetSize: targetSize
+                )
+            }
+
+            if screenIndex < composedImages.count {
+                composedImages[screenIndex] = composed
+            }
+        } catch {
+            showError("Recompose failed: \(error.localizedDescription)")
+        }
+    }
+    #endif
+
+    // MARK: - Regenerate single background
+
+    func regenerateBackground(screenIndex: Int) {
+        guard screenIndex < imagePrompts.count else { return }
+        let prompt = imagePrompts[screenIndex]
+
+        Task {
+            loadingMessage = "Regenerating background \(screenIndex)..."
+            await syncServiceConfigs()
+
+            do {
+                let data = try await backgroundGenerator.generateSingle(prompt: prompt)
+                backgroundImages[screenIndex] = data
+                #if canImport(AppKit)
+                recomposeSingle(screenIndex: screenIndex)
+                #endif
+            } catch {
+                showError(error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: - Navigation
+
+    func goToStep(_ step: Step) {
+        currentStep = step
+    }
+
+    func canAdvance(from step: Step) -> Bool {
+        switch step {
+        case .markdown: return !descriptor.name.isEmpty
+        case .screenshots: return !screenshots.isEmpty
+        case .planPreview: return !screenPlan.screens.isEmpty
+        case .generating: return !backgroundImages.isEmpty
+        #if canImport(AppKit)
+        case .composing: return !composedImages.isEmpty
+        #else
+        case .composing: return false
+        #endif
+        case .export: return true
+        }
+    }
+
+    // MARK: - Error Handling
+
+    private func showError(_ message: String) {
+        errorMessage = message
+        showError = true
+    }
+
+    func dismissError() {
+        showError = false
+        errorMessage = nil
+    }
+}
+
+// MARK: - Screenshot Item
+
+struct ScreenshotItem: Identifiable, Equatable {
+    let id: UUID
+    let imageData: Data
+    let fileName: String
+
+    #if canImport(AppKit)
+    var nsImage: NSImage {
+        NSImage(data: imageData) ?? NSImage()
+    }
+    #endif
+
+    init(id: UUID = UUID(), imageData: Data, fileName: String = "screenshot.png") {
+        self.id = id
+        self.imageData = imageData
+        self.fileName = fileName
+    }
+
+    static func == (lhs: ScreenshotItem, rhs: ScreenshotItem) -> Bool {
+        lhs.id == rhs.id
+    }
+}
