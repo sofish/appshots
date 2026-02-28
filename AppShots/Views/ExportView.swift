@@ -485,7 +485,7 @@ struct ExportView: View {
 
     private var exportProgress: some View {
         VStack(spacing: 12) {
-            ProgressView(value: appState.generationProgress)
+            ProgressView()
                 .progressViewStyle(.linear)
             Text(appState.loadingMessage)
                 .font(.caption)

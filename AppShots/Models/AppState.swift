@@ -393,7 +393,7 @@ import Observation
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     guard !Task.isCancelled else { return }
                     if !self.backgroundImages.isEmpty && self.currentStep == .generating {
-                        self.currentStep = .export
+                        self.goToStep(.export)
                     }
                 }
             }
