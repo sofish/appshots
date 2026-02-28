@@ -42,3 +42,10 @@ Icon?
 # Keys / Secrets
 .env
 *.key
+*.pem
+*.p12
+*.cer
+*.mobileprovision
+
+# Generated / preview files
+.dotmd-preview.html
