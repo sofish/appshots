@@ -1,9 +1,37 @@
 import SwiftUI
+import Combine
 
 /// Step 4: Background generation progress view.
 /// Shows progress as Gemini generates backgrounds in parallel.
 struct GeneratingView: View {
     @EnvironmentObject var appState: AppState
+    @State private var elapsedSeconds: Int = 0
+    @State private var timerCancellable: AnyCancellable?
+    @State private var currentTipIndex: Int = 0
+    @State private var tipTimerCancellable: AnyCancellable?
+
+    private let tips: [String] = [
+        "Generation usually takes 10-30 seconds per screenshot",
+        "Each screenshot is generated in parallel for speed",
+        "You can edit headings and regenerate individual screens later",
+        "Pro tip: The hero screenshot gets 10x more views than others"
+    ]
+
+    private var elapsedFormatted: String {
+        let minutes = elapsedSeconds / 60
+        let seconds = elapsedSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private var estimatedRemaining: String? {
+        let progress = appState.generationProgress
+        guard progress > 0.05 && progress < 1.0 && elapsedSeconds > 2 else { return nil }
+        let totalEstimate = Double(elapsedSeconds) / progress
+        let remaining = Int(totalEstimate * (1.0 - progress))
+        let minutes = remaining / 60
+        let seconds = remaining % 60
+        return String(format: "~%d:%02d remaining", minutes, seconds)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -12,6 +40,47 @@ struct GeneratingView: View {
             Divider()
             footer
         }
+        .onAppear {
+            startTimers()
+        }
+        .onDisappear {
+            stopTimers()
+        }
+        .onChange(of: appState.isLoading) { _, isLoading in
+            if !isLoading {
+                stopTimers()
+            }
+        }
+    }
+
+    private func startTimers() {
+        elapsedSeconds = 0
+        currentTipIndex = 0
+
+        // Elapsed time timer (every 1 second)
+        timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                if appState.isLoading {
+                    elapsedSeconds += 1
+                }
+            }
+
+        // Tip rotation timer (every 5 seconds)
+        tipTimerCancellable = Timer.publish(every: 5, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    currentTipIndex = (currentTipIndex + 1) % tips.count
+                }
+            }
+    }
+
+    private func stopTimers() {
+        timerCancellable?.cancel()
+        timerCancellable = nil
+        tipTimerCancellable?.cancel()
+        tipTimerCancellable = nil
     }
 
     // MARK: - Progress Content
@@ -47,6 +116,19 @@ struct GeneratingView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                // Elapsed time and estimated remaining
+                HStack(spacing: 16) {
+                    Label("Elapsed: \(elapsedFormatted)", systemImage: "clock")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+
+                    if let remaining = estimatedRemaining {
+                        Text(remaining)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
                 if appState.generateIPad {
                     HStack(spacing: 16) {
                         HStack(spacing: 4) {
@@ -65,6 +147,22 @@ struct GeneratingView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
+                }
+
+                // Rotating tips
+                if appState.isLoading {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb.fill")
+                            .foregroundStyle(.yellow)
+                        Text(tips[currentTipIndex])
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .id(currentTipIndex)
+                            .transition(.opacity)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.3)))
                 }
             }
 
@@ -88,12 +186,13 @@ struct GeneratingView: View {
         let iPhoneComplete = appState.backgroundImages[screen.index] != nil
         let iPadComplete = appState.iPadBackgroundImages[screen.index] != nil
         let allComplete = iPhoneComplete && (!appState.generateIPad || iPadComplete)
+        let screenshotItem: ScreenshotItem? = screen.screenshotMatch < appState.screenshots.count ? appState.screenshots[screen.screenshotMatch] : nil
 
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(allComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
-                    .frame(height: 60)
+                    .frame(height: 70)
 
                 if allComplete {
                     Image(systemName: "checkmark.circle.fill")
@@ -101,7 +200,25 @@ struct GeneratingView: View {
                         .foregroundStyle(.green)
                 } else if appState.isLoading {
                     VStack(spacing: 4) {
+                        // Show miniature screenshot thumbnail
+                        #if canImport(AppKit)
+                        if let item = screenshotItem {
+                            Image(nsImage: item.nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(height: 36)
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .opacity(0.5)
+                                .overlay(
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                )
+                        } else {
+                            ProgressView()
+                        }
+                        #else
                         ProgressView()
+                        #endif
                         if appState.generateIPad {
                             HStack(spacing: 4) {
                                 Image(systemName: "iphone")

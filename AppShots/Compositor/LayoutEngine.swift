@@ -25,12 +25,14 @@ struct LayoutEngine {
         var screenshotFillsCanvas: Bool = false     // fullBleed: screenshot as background
         var gradientScrimRect: CGRect? = nil        // fullBleed: gradient overlay area
         var isFrameless: Bool = false               // frameless: rounded corners + shadow, no bezel
+        var textAlignedToDevice: Bool = false       // true for left/right layouts (text aligns beside device)
     }
 
     // MARK: - Shared Constants
 
     private let frameBorderRatio: CGFloat = 0.04      // Bezel relative to device width
     private let hMargin: CGFloat = 0.06               // Horizontal margin as ratio of width
+    private let textTopPadding: CGFloat = 0.04        // Ratio of canvas height for space above text
 
     // MARK: - Calculate Layout (iPhone)
 
@@ -174,7 +176,7 @@ struct LayoutEngine {
         switch position {
         case "left":
             // Device on left, text on right
-            let deviceWidth = w * 0.65
+            let deviceWidth = w * 0.60
             let (deviceRect, screenInset) = makeDevice(
                 width: deviceWidth,
                 x: -deviceWidth * 0.06,
@@ -184,7 +186,8 @@ struct LayoutEngine {
 
             let textX = deviceRect.maxX + margin
             let textWidth = w - textX - margin
-            let textTopY = h * 0.68
+            // Center text vertically in the available space beside the device
+            let textTopY = (deviceRect.maxY + deviceRect.minY) / 2
 
             let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
                 canvasSize: canvasSize,
@@ -196,7 +199,7 @@ struct LayoutEngine {
                 subheadingScale: 0.035
             )
 
-            return LayoutResult(
+            var result = LayoutResult(
                 headingRect: headingRect,
                 subheadingRect: subheadingRect,
                 deviceRect: deviceRect,
@@ -205,10 +208,12 @@ struct LayoutEngine {
                 subheadingFontSize: subheadingFS,
                 rotationAngle: tilt ? -8 : 0
             )
+            result.textAlignedToDevice = true
+            return result
 
         case "right":
             // Device on right, text on left
-            let deviceWidth = w * 0.65
+            let deviceWidth = w * 0.60
             let deviceX = w - deviceWidth + deviceWidth * 0.06
             let (deviceRect, screenInset) = makeDevice(
                 width: deviceWidth,
@@ -220,7 +225,8 @@ struct LayoutEngine {
             let textX = margin
             let textWidth = deviceRect.minX - margin - textX
 
-            let textTopY = h * 0.68
+            // Center text vertically in the available space beside the device
+            let textTopY = (deviceRect.maxY + deviceRect.minY) / 2
 
             let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
                 canvasSize: canvasSize,
@@ -232,7 +238,7 @@ struct LayoutEngine {
                 subheadingScale: 0.035
             )
 
-            return LayoutResult(
+            var result = LayoutResult(
                 headingRect: headingRect,
                 subheadingRect: subheadingRect,
                 deviceRect: deviceRect,
@@ -241,6 +247,8 @@ struct LayoutEngine {
                 subheadingFontSize: subheadingFS,
                 rotationAngle: tilt ? 8 : 0
             )
+            result.textAlignedToDevice = true
+            return result
 
         default:
             // Center: big device at 80% width, text above
@@ -249,11 +257,16 @@ struct LayoutEngine {
             let (deviceRect, screenInset) = makeDevice(
                 width: deviceWidth,
                 x: (w - deviceWidth) / 2 + xOffset,
-                y: -h * 0.08,
+                y: -h * 0.12,
                 deviceAspect: deviceAspect
             )
 
-            let textTopY = min(deviceRect.maxY + h * 0.02, h - h * 0.06)
+            // Place heading at a consistent 78% of canvas height from bottom,
+            // ensuring stable text placement regardless of device height overflow
+            let consistentTextTopY = h * 0.78
+            // Ensure minimum gap between subheading and device top
+            let minGapAboveDevice = h * 0.02
+            let textTopY = min(consistentTextTopY, deviceRect.maxY - minGapAboveDevice)
             let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
                 canvasSize: canvasSize,
                 topY: textTopY,
@@ -435,7 +448,7 @@ struct LayoutEngine {
         let screenWidth = w * 0.75
         let screenHeight = screenWidth * deviceAspect
         let screenX = (w - screenWidth) / 2
-        let screenY = h * 0.02
+        let screenY = h * 0.05
 
         let deviceRect = CGRect(x: screenX, y: screenY, width: screenWidth, height: screenHeight)
         // Frameless: screenInset origin (0,0) means "no border offset from deviceRect"
@@ -483,11 +496,11 @@ struct LayoutEngine {
 
         let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
             canvasSize: canvasSize,
-            topY: h - margin * 1.5,    // Top of canvas with comfortable margin
+            topY: h * 0.90,            // Top of canvas with comfortable margin
             textWidth: w - 2 * margin,
             textX: margin,
             hasSubheading: hasSubheading,
-            headingScale: 0.10,        // Large heading for dominant text style
+            headingScale: 0.12,        // Large heading for dominant text style
             subheadingScale: 0.05
         )
 
@@ -529,8 +542,8 @@ struct LayoutEngine {
         let h = canvasSize.height
         let margin = w * hMargin
 
-        // Device centered at 55% width — straddles the vertical split
-        let deviceWidth = w * 0.55
+        // Device centered at 60% width — straddles the vertical split
+        let deviceWidth = w * 0.60
         let (deviceRect, screenInset) = makeDevice(
             width: deviceWidth,
             x: (w - deviceWidth) / 2,
@@ -575,8 +588,8 @@ struct LayoutEngine {
         let h = canvasSize.height
         let margin = w * hMargin
 
-        // Primary device at 50% width, offset to the left
-        let deviceWidth = w * 0.50
+        // Primary device at 55% width, offset to the left
+        let deviceWidth = w * 0.55
         let (deviceRect, screenInset) = makeDevice(
             width: deviceWidth,
             x: w * 0.05,
@@ -587,7 +600,7 @@ struct LayoutEngine {
         // Text on the right side of the device
         let textX = deviceRect.maxX + margin
         let textWidth = w - textX - margin
-        let textTopY = h * 0.70
+        let textTopY = h * 0.75
 
         let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
             canvasSize: canvasSize,

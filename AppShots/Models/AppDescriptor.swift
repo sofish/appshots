@@ -78,4 +78,24 @@ struct AppDescriptor: Codable, Equatable {
         targetAudience: "",
         socialProof: nil
     )
+
+    /// Recommended number of screenshots: always between 3 and 6, based on feature count.
+    var screenshotCountRecommendation: Int {
+        min(max(features.count, 3), 6)
+    }
+
+    /// One-line summary of the app descriptor.
+    var briefSummary: String {
+        "\(name) - \(category) (\(style.rawValue)) - \(features.count) features"
+    }
+
+    /// Returns the primary color if non-empty, otherwise a default dark color.
+    var dominantColor: String {
+        colors.primary.isEmpty ? "#0a0a0a" : colors.primary
+    }
+
+    /// Returns true if all essential fields are filled in.
+    var isComplete: Bool {
+        !name.isEmpty && !tagline.isEmpty && !features.isEmpty && !corePitch.isEmpty
+    }
 }

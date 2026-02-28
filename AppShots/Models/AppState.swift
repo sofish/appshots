@@ -6,7 +6,7 @@ import SwiftUI
 
 /// Central state management for the AppShots pipeline.
 /// Drives the UI through the 6-step workflow:
-/// ① Markdown → ② Screenshots → ③ Preview Plan → ④ Generate Backgrounds → ⑤ Compose → ⑥ Export
+/// 1 Markdown -> 2 Screenshots -> 3 Preview Plan -> 4 Generate Backgrounds -> 5 Compose -> 6 Export
 @MainActor
 final class AppState: ObservableObject {
 
@@ -88,6 +88,24 @@ final class AppState: ObservableObject {
     @Published var exportResults: [Exporter.ExportResult] = []
     #endif
 
+    // MARK: - Retry State
+
+    @Published var retryCount: Int = 0
+    let maxRetries: Int = 3
+
+    // MARK: - Computed Properties
+
+    /// Whether the user can export: at least one composed image AND at least one size selected
+    var canExport: Bool {
+        #if canImport(AppKit)
+        let hasImages = !composedImages.isEmpty || !iPadComposedImages.isEmpty
+        #else
+        let hasImages = false
+        #endif
+        let hasSizes = !selectedSizes.isEmpty
+        return hasImages && hasSizes
+    }
+
     // MARK: - Services
 
     private let parser = MarkdownParser()
@@ -108,6 +126,7 @@ final class AppState: ObservableObject {
     @AppStorage("gemini_base_url") var geminiBaseURL = ""
     @AppStorage("gemini_api_key") var geminiAPIKey = ""
     @AppStorage("gemini_model") var geminiModel = ""
+    @AppStorage("last_markdown") var lastMarkdown = ""
 
     init() {
         let llm = LLMService()
@@ -135,12 +154,80 @@ final class AppState: ObservableObject {
         await backgroundGenerator.updateConfig(geminiConfig)
     }
 
+    // MARK: - Progress Persistence
+
+    /// Saves the current markdown text to AppStorage so it persists across app launches.
+    func saveProgress() {
+        lastMarkdown = markdownText
+    }
+
+    /// Restores the last markdown text from AppStorage if the current text is empty.
+    func restoreProgress() {
+        if markdownText.isEmpty && !lastMarkdown.isEmpty {
+            markdownText = lastMarkdown
+        }
+    }
+
+    // MARK: - Smart Defaults
+
+    /// Applies sensible defaults after parsing Markdown when fields are missing.
+    func applySmartDefaults() {
+        var applied: [String] = []
+
+        // Default dark theme if no colors specified
+        if descriptor.colors.primary.isEmpty && descriptor.colors.accent.isEmpty {
+            descriptor.colors = ColorPalette(primary: "#0a0a0a", accent: "#3b82f6")
+            applied.append("colors (dark theme: primary=#0a0a0a, accent=#3b82f6)")
+        } else if descriptor.colors.primary.isEmpty {
+            descriptor.colors.primary = "#0a0a0a"
+            applied.append("primary color (#0a0a0a)")
+        } else if descriptor.colors.accent.isEmpty {
+            descriptor.colors.accent = "#3b82f6"
+            applied.append("accent color (#3b82f6)")
+        }
+
+        // Default style to .minimal if not explicitly set (name is empty or matches default)
+        // Since the parser defaults to .minimal already, we only log if the descriptor has no style hint
+        if descriptor.style == .minimal && descriptor.name.isEmpty == false {
+            // Style was either explicitly minimal or defaulted — no action needed
+        }
+
+        if !applied.isEmpty {
+            print("[SmartDefaults] Applied defaults: \(applied.joined(separator: ", "))")
+        } else {
+            print("[SmartDefaults] No defaults needed — all fields populated")
+        }
+    }
+
+    // MARK: - API Config Validation
+
+    /// Returns true if both LLM and Gemini API settings are fully configured.
+    var hasValidAPIConfig: Bool {
+        !llmBaseURL.isEmpty && !llmAPIKey.isEmpty &&
+        !geminiBaseURL.isEmpty && !geminiAPIKey.isEmpty
+    }
+
+    /// Returns a human-readable message about what API configuration is missing, or nil if all configured.
+    var missingConfigMessage: String? {
+        var missing: [String] = []
+
+        if llmBaseURL.isEmpty { missing.append("LLM Base URL") }
+        if llmAPIKey.isEmpty { missing.append("LLM API Key") }
+        if geminiBaseURL.isEmpty { missing.append("Gemini Base URL") }
+        if geminiAPIKey.isEmpty { missing.append("Gemini API Key") }
+
+        guard !missing.isEmpty else { return nil }
+        return "Missing configuration: \(missing.joined(separator: ", ")). Open Settings (Cmd+,) to configure."
+    }
+
     // MARK: - Step 1: Parse Markdown
 
     func parseMarkdown() {
         do {
             descriptor = try parser.parse(markdownText)
+            applySmartDefaults()
             errorMessage = nil
+            saveProgress()
             currentStep = .screenshots
         } catch {
             showError(error.localizedDescription)
@@ -154,6 +241,19 @@ final class AppState: ObservableObject {
             showError("Please add at least one screenshot.")
             return
         }
+
+        // Validate descriptor has at least 1 feature
+        guard !descriptor.features.isEmpty else {
+            showError("Your app description needs at least one feature. Please go back and add features to your Markdown.")
+            return
+        }
+
+        // Validate screenshots have at least 1 item (redundant with above, but explicit)
+        guard screenshots.count >= 1 else {
+            showError("Please add at least one screenshot.")
+            return
+        }
+
         currentStep = .planPreview
         generatePlan()
     }
@@ -181,10 +281,16 @@ final class AppState: ObservableObject {
         }
     }
 
-    // MARK: - Step 4: Generate Screenshots (Gemini × N)
+    // MARK: - Step 4: Generate Screenshots (Gemini x N)
 
     func startGeneration() {
         currentStep = .generating
+        retryCount = 0
+        performGeneration()
+    }
+
+    /// Internal generation logic, supports automatic retry on total failure
+    private func performGeneration() {
         Task {
             isLoading = true
             loadingMessage = "Building image prompts..."
@@ -200,7 +306,7 @@ final class AppState: ObservableObject {
                     iPadPrompts = promptTranslator.translateIPad(plan: screenPlan)
                 }
 
-                // Step B: Build screenshot data map (screenIndex → screenshot data)
+                // Step B: Build screenshot data map (screenIndex -> screenshot data)
                 var screenshotDataMap: [Int: Data] = [:]
                 for screen in screenPlan.screens {
                     if screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count {
@@ -276,18 +382,33 @@ final class AppState: ObservableObject {
 
                 isLoading = false
 
-                // Show partial results even if some failed
+                // Auto-advance to export with a short delay for smoother transition
                 if !backgroundImages.isEmpty {
-                    currentStep = .export
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 500_000_000)
+                        if !self.backgroundImages.isEmpty {
+                            self.currentStep = .export
+                        }
+                    }
                 }
 
-                // Report error for failed images
+                // Report error for failed images, with auto-retry for total failure
                 if let error = generationError {
                     let successCount = backgroundImages.count + iPadBackgroundImages.count
                     if successCount > 0 {
                         showError("Some images failed to generate (\(successCount)/\(Int(total)) succeeded): \(error.localizedDescription)")
                     } else {
-                        showError(error.localizedDescription)
+                        // Total failure: auto-retry once with delay
+                        if retryCount < 1 {
+                            retryCount += 1
+                            loadingMessage = "All images failed. Retrying in 2 seconds (attempt \(retryCount + 1))..."
+                            isLoading = true
+                            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                            performGeneration()
+                            return
+                        } else {
+                            showError(error.localizedDescription)
+                        }
                     }
                 }
             } catch {
@@ -295,6 +416,20 @@ final class AppState: ObservableObject {
                 showError(error.localizedDescription)
             }
         }
+    }
+
+    // MARK: - Reset Generation
+
+    /// Clears all generation artifacts for a clean restart
+    func resetGeneration() {
+        backgroundImages = [:]
+        iPadBackgroundImages = [:]
+        #if canImport(AppKit)
+        composedImages = []
+        iPadComposedImages = []
+        #endif
+        generationProgress = 0
+        retryCount = 0
     }
 
     // MARK: - Step 5: Compose (Core Graphics, no LLM)
@@ -509,16 +644,49 @@ final class AppState: ObservableObject {
 
     func canAdvance(from step: Step) -> Bool {
         switch step {
-        case .markdown: return !descriptor.name.isEmpty
-        case .screenshots: return !screenshots.isEmpty
-        case .planPreview: return !screenPlan.screens.isEmpty
-        case .generating: return !backgroundImages.isEmpty
+        case .markdown:
+            return !markdownText.isEmpty && descriptor.name.count > 0
+        case .screenshots:
+            return !screenshots.isEmpty && screenshots.count <= 10
+        case .planPreview:
+            return !screenPlan.screens.isEmpty && !isLoading
+        case .generating:
+            return !backgroundImages.isEmpty && !isLoading
         #if canImport(AppKit)
-        case .composing: return !composedImages.isEmpty
+        case .composing:
+            return !composedImages.isEmpty
         #else
-        case .composing: return false
+        case .composing:
+            return false
         #endif
-        case .export: return true
+        case .export:
+            return true
+        }
+    }
+
+    /// Returns a brief summary of completed work for a given step, or nil if nothing done yet.
+    func stepSummary(for step: Step) -> String? {
+        switch step {
+        case .markdown:
+            return descriptor.name.isEmpty ? nil : descriptor.name
+        case .screenshots:
+            return screenshots.isEmpty ? nil : "\(screenshots.count) screenshots"
+        case .planPreview:
+            return screenPlan.screens.isEmpty ? nil : "\(screenPlan.screens.count) screens planned"
+        case .generating:
+            return backgroundImages.isEmpty ? nil : "\(backgroundImages.count) generated"
+        case .composing:
+            #if canImport(AppKit)
+            return composedImages.isEmpty ? nil : "\(composedImages.count) composed"
+            #else
+            return nil
+            #endif
+        case .export:
+            #if canImport(AppKit)
+            return exportResults.isEmpty ? nil : "\(exportResults.count) exported"
+            #else
+            return nil
+            #endif
         }
     }
 

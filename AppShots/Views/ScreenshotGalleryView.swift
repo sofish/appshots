@@ -11,11 +11,43 @@ struct ScreenshotGalleryView: View {
     @EnvironmentObject var appState: AppState
     @State private var isDragOver = false
     @State private var draggingItemID: UUID?
+    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+
+            // Recommendation banner when fewer than 3 screenshots
+            if !appState.screenshots.isEmpty && appState.screenshots.count < 3 {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.yellow)
+                    Text("Recommended: 3-6 screenshots for best results")
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color.yellow.opacity(0.12))
+            }
+
+            // Max screenshots exceeded banner
+            if appState.screenshots.count > 10 {
+                HStack(spacing: 8) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text("Maximum 10 screenshots")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color.red.opacity(0.08))
+            }
+
             mainContent
             Divider()
             footer
@@ -96,6 +128,26 @@ struct ScreenshotGalleryView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(isDragOver ? Color.accentColor.opacity(0.05) : .clear))
                 .padding()
         )
+        .overlay(
+            Group {
+                if isDragOver {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.accentColor.opacity(0.6), lineWidth: 3)
+                        .scaleEffect(pulseScale)
+                        .opacity(2.0 - Double(pulseScale))
+                        .padding()
+                        .onAppear {
+                            pulseScale = 1.0
+                            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                                pulseScale = 1.05
+                            }
+                        }
+                        .onDisappear {
+                            pulseScale = 1.0
+                        }
+                }
+            }
+        )
         .onPasteCommand(of: [UTType.image]) { providers in
             handleDrop(providers)
         }
@@ -150,7 +202,18 @@ struct ScreenshotGalleryView: View {
             .frame(width: 160, height: 280)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.gray.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6]))
+                    .fill(.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color.accentColor.opacity(0.5), Color.purple.opacity(0.3), Color.accentColor.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.5
+                    )
             )
         }
         .buttonStyle(.plain)
@@ -227,7 +290,7 @@ struct ScreenshotGalleryView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(appState.screenshots.isEmpty)
+            .disabled(appState.screenshots.isEmpty || appState.screenshots.count > 10)
             .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.horizontal, 20)
@@ -322,6 +385,14 @@ struct ScreenshotCard: View {
     let index: Int
     @EnvironmentObject var appState: AppState
 
+    #if canImport(AppKit)
+    private var imageDimensions: String {
+        let img = item.nsImage
+        guard let rep = img.representations.first else { return "" }
+        return "\(rep.pixelsWide)\u{00D7}\(rep.pixelsHigh)"
+    }
+    #endif
+
     var body: some View {
         VStack(spacing: 4) {
             // Thumbnail
@@ -332,6 +403,11 @@ struct ScreenshotCard: View {
                 .frame(width: 160, height: 260)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+
+            // Image dimensions
+            Text(imageDimensions)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
             #endif
 
             // Label

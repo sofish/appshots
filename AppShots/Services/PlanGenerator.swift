@@ -39,7 +39,48 @@ struct PlanGenerator {
             )
         }
 
-        return try parseResponse(response)
+        let plan = try parseResponse(response)
+        return enhancePrompts(plan: plan)
+    }
+
+    // MARK: - Enhance image prompts post-parse
+
+    /// Validates and enhances image prompts after LLM parsing to ensure minimum quality.
+    /// - Pads short prompts with quality cues
+    /// - Injects heading text if missing from the prompt
+    /// - Injects device presentation language if missing
+    private func enhancePrompts(plan: ScreenPlan) -> ScreenPlan {
+        var enhanced = plan
+        enhanced.screens = plan.screens.map { screen in
+            var screen = screen
+            var prompt = screen.imagePrompt
+
+            // If prompt is too short, auto-enhance with bookend quality cues
+            if prompt.count < 50 {
+                prompt = "App Store screenshot showcase: " + prompt + " Premium editorial quality, clean composition."
+            }
+
+            // Ensure the heading text appears in the prompt
+            let headingLower = screen.heading.lowercased()
+            if !prompt.lowercased().contains(headingLower) {
+                prompt += " Heading: \"\(screen.heading)\"."
+                if !screen.subheading.isEmpty {
+                    prompt += " Subheading: \"\(screen.subheading)\"."
+                }
+            }
+
+            // Ensure device presentation is mentioned
+            let deviceKeywords = ["iphone", "ipad", "device", "mockup", "floating", "frame", "full-bleed", "full bleed", "edge-to-edge"]
+            let promptLower = prompt.lowercased()
+            let hasDeviceMention = deviceKeywords.contains { promptLower.contains($0) }
+            if !hasDeviceMention {
+                prompt += " Floating device mockup with subtle shadow."
+            }
+
+            screen.imagePrompt = prompt
+            return screen
+        }
+        return enhanced
     }
 
     // MARK: - Build user message from descriptor

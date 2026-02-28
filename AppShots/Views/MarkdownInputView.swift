@@ -11,6 +11,7 @@ struct MarkdownInputView: View {
     @State private var showCopiedToast = false
     @State private var parsedDescriptor: AppDescriptor?
     @State private var parseDebounceTask: Task<Void, Never>?
+    @State private var borderGlowActive = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,13 +37,29 @@ struct MarkdownInputView: View {
             // Footer with action button
             footer
         }
+        .overlay(
+            RoundedRectangle(cornerRadius: 0)
+                .stroke(Color.green.opacity(borderGlowActive ? 0.5 : 0.0), lineWidth: 3)
+                .blur(radius: borderGlowActive ? 6 : 0)
+                .animation(.easeInOut(duration: 1.0), value: borderGlowActive)
+        )
         .onChange(of: appState.markdownText) { _, _ in
             parseDebounceTask?.cancel()
             parseDebounceTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
                 guard !Task.isCancelled else { return }
                 let parser = MarkdownParser()
-                parsedDescriptor = try? parser.parse(appState.markdownText)
+                let result = try? parser.parse(appState.markdownText)
+                parsedDescriptor = result
+                // Trigger border glow on successful parse
+                if result != nil {
+                    borderGlowActive = true
+                    try? await Task.sleep(nanoseconds: 1_500_000_000) // 1.5s glow
+                    guard !Task.isCancelled else { return }
+                    borderGlowActive = false
+                } else {
+                    borderGlowActive = false
+                }
             }
         }
         .onAppear {
@@ -106,6 +123,16 @@ struct MarkdownInputView: View {
                 .font(.system(.body, design: .monospaced))
                 .scrollContentBackground(.hidden)
                 .padding(8)
+
+            // Character count footer
+            HStack {
+                Text("\(appState.markdownText.count) characters")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 6)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -152,8 +179,10 @@ struct MarkdownInputView: View {
     private var parsedPreview: some View {
         if let desc = parsedDescriptor {
             VStack(alignment: .leading, spacing: 12) {
-                previewField("App Name", desc.name)
-                previewField("Tagline", desc.tagline)
+                // App Name in blue
+                coloredPreviewField("App Name", desc.name, color: .blue)
+                // Tagline in purple
+                coloredPreviewField("Tagline", desc.tagline, color: .purple)
                 previewField("Category", desc.category)
                 previewField("Platforms", desc.platforms.map(\.rawValue).joined(separator: ", "))
                 previewField("Style", desc.style.displayName)
@@ -162,12 +191,25 @@ struct MarkdownInputView: View {
 
                 Divider()
 
-                Text("Features (\(desc.features.count))")
-                    .font(.headline)
+                // Features section with count and color
+                HStack {
+                    Text("Features (\(desc.features.count))")
+                        .font(.headline)
+                        .foregroundStyle(.green)
+                    Spacer()
+                    Text("\(desc.features.count) features detected")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.green.opacity(0.12)))
+                }
+
                 ForEach(desc.features) { feature in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(feature.name)
                             .font(.callout.bold())
+                            .foregroundStyle(.green)
                         Text(feature.description)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -210,6 +252,17 @@ struct MarkdownInputView: View {
         }
     }
 
+    private func coloredPreviewField(_ label: String, _ value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value.isEmpty ? "—" : value)
+                .font(.callout)
+                .foregroundStyle(color)
+        }
+    }
+
     // MARK: - Footer
 
     private var footer: some View {
@@ -226,8 +279,16 @@ struct MarkdownInputView: View {
 
             Spacer()
 
-            Button("Continue") {
+            Button {
                 appState.parseMarkdown()
+            } label: {
+                HStack(spacing: 6) {
+                    if parsedDescriptor != nil {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    }
+                    Text("Continue")
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -275,39 +336,39 @@ struct MarkdownInputView: View {
 // MARK: - Sample Markdown
 
 private let sampleMarkdown = """
-# dotmd
+# Momento
 
-> Your thoughts, locally encrypted, universally synced.
+> Your life is worth remembering. Momento makes it effortless.
 
-- **类别：** Productivity
+- **类别：** Photography & Lifestyle
 - **平台：** iOS / macOS
 - **语言：** en
-- **风格：** minimal
-- **色调：** #0a0a0a, #3b82f6
+- **风格：** elegant
+- **色调：** #1a1a2e, #e8b931
 
 ## 核心卖点
-A beautiful Markdown editor that keeps your notes private with end-to-end encryption, while syncing seamlessly across all your Apple devices.
+Momento transforms your scattered photo library into a beautifully curated life journal. Every photo, every place, every feeling — woven into timelines that feel like opening a window to the past. Preserve your most meaningful moments with zero effort and absolute privacy.
 
 ## 功能亮点
 
-### Local-First AI Search
-Find any note instantly with on-device AI-powered semantic search. Your data never leaves your device.
+### Relive Any Day in a Single Tap
+Automatic daily journals crafted from your photos, locations, and notes — beautifully arranged so every ordinary Tuesday feels worth remembering.
 
-### End-to-End Encryption
-Every note is encrypted before it leaves your device. Not even we can read your thoughts.
+### Smart Albums That Actually Understand You
+AI-powered organization groups photos by people, places, seasons, and emotions — no manual tagging, no tedious sorting, just memories that find themselves.
 
-### Universal Sync
-Seamlessly sync across iPhone, iPad, and Mac through iCloud with zero configuration.
+### Tell Stories, Not Just Show Photos
+Weave photos, handwritten captions, and voice memos into rich visual narratives you can share with loved ones or treasure privately for years to come.
 
-### Beautiful Editor
-A distraction-free writing experience with live Markdown preview and custom themes.
+### Private by Design, Beautiful by Default
+Every memory stays on-device with end-to-end encrypted iCloud sync. No servers, no tracking, no compromise — just your story, protected and elegantly presented.
 
-### Smart Organization
-Tags, folders, and smart collections that adapt to how you think and work.
+### Print-Ready Keepsakes in Minutes
+Turn any album into a stunning hardcover photo book or gallery-quality wall print — designed automatically by Momento, delivered to your door.
 
 ## 目标用户
-Privacy-conscious writers and note-takers who want a beautiful, secure Markdown editor that works across all Apple devices.
+Creative individuals who value their memories — photographers, journalers, parents, and travelers who want a beautiful, private way to preserve, organize, and share the moments that matter most.
 
 ## 补充说明
-Featured by Apple as "App of the Day". 4.8 star rating with 2,000+ reviews. 50,000+ downloads.
+Rated 4.9 stars with 100K+ downloads worldwide. Featured in "Apps We Love" on the App Store. Winner of the 2025 Apple Design Award for Delight and Fun. Trusted by professional photographers and everyday memory-keepers alike.
 """

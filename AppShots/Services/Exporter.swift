@@ -11,6 +11,7 @@ struct Exporter {
         case bitmapCreationFailed
         case writeFailed(String)
         case fileTooLarge(String, Double)
+        case directoryNotWritable(String)
 
         var errorDescription: String? {
             switch self {
@@ -19,6 +20,8 @@ struct Exporter {
             case .writeFailed(let path): return "Failed to write to \(path)."
             case .fileTooLarge(let name, let mb):
                 return "\(name) is \(String(format: "%.1f", mb))MB — exceeds the App Store 10MB limit."
+            case .directoryNotWritable(let path):
+                return "Output directory is not writable: \(path). Check permissions or choose a different folder."
             }
         }
     }
@@ -37,20 +40,35 @@ struct Exporter {
         appName: String,
         config: ExportConfig,
         outputDirectory: URL,
+        screenHeadings: [String?] = [],
         onProgress: @escaping (Int, Int) -> Void
     ) throws -> [ExportResult] {
         guard !images.isEmpty else { throw ExporterError.noImages }
 
+        // Validate output directory is writable
+        guard FileManager.default.isWritableFile(atPath: outputDirectory.path) else {
+            throw ExporterError.directoryNotWritable(outputDirectory.path)
+        }
+
         var results: [ExportResult] = []
         let total = images.count * config.sizes.count
         var completed = 0
+        let padLength = images.count >= 100 ? 3 : 2
 
         for (index, image) in images.enumerated() {
             for size in config.sizes {
                 let resized = resize(image: image, to: size)
                 var data = try encode(image: resized, format: config.format, quality: config.jpegQuality)
 
-                let fileName = "\(sanitizeFileName(appName))_\(size.id)_\(index).\(config.format.fileExtension)"
+                let paddedIndex = String(format: "%0\(padLength)d", index + 1)
+                let heading = index < screenHeadings.count ? screenHeadings[index] : nil
+                let headingSlug = heading.flatMap { makeHeadingSlug($0) }
+                let fileName: String
+                if let slug = headingSlug {
+                    fileName = "\(sanitizeFileName(appName))_\(size.id)_\(paddedIndex)_\(slug).\(config.format.fileExtension)"
+                } else {
+                    fileName = "\(sanitizeFileName(appName))_\(size.id)_\(paddedIndex).\(config.format.fileExtension)"
+                }
                 let filePath = outputDirectory.appendingPathComponent(fileName)
 
                 // Compress before writing if file exceeds size limit
@@ -90,12 +108,22 @@ struct Exporter {
         size: DeviceSize,
         format: ExportFormat,
         quality: Double,
-        outputDirectory: URL
+        outputDirectory: URL,
+        heading: String? = nil,
+        totalCount: Int = 10
     ) throws -> ExportResult {
         let resized = resize(image: image, to: size)
         let data = try encode(image: resized, format: format, quality: quality)
 
-        let fileName = "\(sanitizeFileName(appName))_\(size.id)_\(index).\(format.fileExtension)"
+        let padLength = totalCount >= 100 ? 3 : 2
+        let paddedIndex = String(format: "%0\(padLength)d", index + 1)
+        let headingSlug = heading.flatMap { makeHeadingSlug($0) }
+        let fileName: String
+        if let slug = headingSlug {
+            fileName = "\(sanitizeFileName(appName))_\(size.id)_\(paddedIndex)_\(slug).\(format.fileExtension)"
+        } else {
+            fileName = "\(sanitizeFileName(appName))_\(size.id)_\(paddedIndex).\(format.fileExtension)"
+        }
         let filePath = outputDirectory.appendingPathComponent(fileName)
         try data.write(to: filePath)
 
@@ -190,6 +218,51 @@ struct Exporter {
 
         // Last resort: lowest quality
         return try encode(image: image, format: .jpeg, quality: 0.1)
+    }
+
+    // MARK: - Manifest Generation
+
+    func generateManifest(
+        appName: String,
+        results: [ExportResult],
+        outputDirectory: URL
+    ) throws {
+        let dateFormatter = ISO8601DateFormatter()
+        let exportDate = dateFormatter.string(from: Date())
+
+        let fileEntries: [[String: Any]] = results.map { result in
+            [
+                "fileName": result.fileName,
+                "deviceSize": result.deviceSize.id,
+                "pixelWidth": result.deviceSize.width,
+                "pixelHeight": result.deviceSize.height,
+                "fileSize": result.fileSize,
+                "format": result.filePath.pathExtension.uppercased()
+            ]
+        }
+
+        let manifest: [String: Any] = [
+            "appName": appName,
+            "exportDate": exportDate,
+            "totalFiles": results.count,
+            "files": fileEntries
+        ]
+
+        let jsonData = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+        let manifestFileName = "\(sanitizeFileName(appName))_manifest.json"
+        let manifestPath = outputDirectory.appendingPathComponent(manifestFileName)
+        try jsonData.write(to: manifestPath)
+    }
+
+    // MARK: - Helpers
+
+    private func makeHeadingSlug(_ heading: String) -> String? {
+        let words = heading
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        guard !words.isEmpty else { return nil }
+        return words.prefix(3).joined(separator: "-")
     }
 
     private func sanitizeFileName(_ name: String) -> String {

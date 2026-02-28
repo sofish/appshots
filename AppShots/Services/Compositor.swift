@@ -167,6 +167,9 @@ struct Compositor {
         targetSize: DeviceSize,
         backgroundImage: NSImage?
     ) {
+        context.saveGState()
+        defer { context.restoreGState() }
+
         if layout.screenshotFillsCanvas {
             drawScreenshotAsBackground(context: context, screenshot: screenshot, size: canvasSize)
             if let scrimRect = layout.gradientScrimRect {
@@ -176,7 +179,7 @@ struct Compositor {
                 context: context,
                 text: config.heading,
                 rect: layout.headingRect,
-                color: hexToColor(colors.text),
+                color: hexToColor(colors.text, isTextColor: true),
                 fontSize: layout.headingFontSize
             )
             if !config.subheading.isEmpty {
@@ -184,7 +187,7 @@ struct Compositor {
                     context: context,
                     text: config.subheading,
                     rect: layout.subheadingRect,
-                    color: hexToColor(colors.subtext),
+                    color: hexToColor(colors.subtext, isTextColor: true),
                     fontSize: layout.subheadingFontSize
                 )
             }
@@ -226,7 +229,7 @@ struct Compositor {
                 context: context,
                 text: config.heading,
                 rect: layout.headingRect,
-                color: hexToColor(colors.text),
+                color: hexToColor(colors.text, isTextColor: true),
                 fontSize: layout.headingFontSize
             )
             if !config.subheading.isEmpty {
@@ -234,7 +237,7 @@ struct Compositor {
                     context: context,
                     text: config.subheading,
                     rect: layout.subheadingRect,
-                    color: hexToColor(colors.subtext),
+                    color: hexToColor(colors.subtext, isTextColor: true),
                     fontSize: layout.subheadingFontSize
                 )
             }
@@ -256,8 +259,32 @@ struct Compositor {
         primaryColor: CGColor,
         accentColor: CGColor
     ) {
-        let colors = [primaryColor, accentColor] as CFArray
-        let locations: [CGFloat] = [0.0, 1.0]
+        // Extract RGB components from primary and accent colors for interpolation
+        let primaryComponents = primaryColor.components ?? [0, 0, 0, 1]
+        let accentComponents = accentColor.components ?? [0.5, 0.5, 0.5, 1]
+
+        let pR = primaryComponents.count >= 3 ? primaryComponents[0] : primaryComponents[0]
+        let pG = primaryComponents.count >= 3 ? primaryComponents[1] : primaryComponents[0]
+        let pB = primaryComponents.count >= 3 ? primaryComponents[2] : primaryComponents[0]
+
+        let aR = accentComponents.count >= 3 ? accentComponents[0] : accentComponents[0]
+        let aG = accentComponents.count >= 3 ? accentComponents[1] : accentComponents[0]
+        let aB = accentComponents.count >= 3 ? accentComponents[2] : accentComponents[0]
+
+        // Blended mid-stop: interpolate primary and accent at 50/50
+        let midColor = CGColor(red: (pR + aR) / 2.0, green: (pG + aG) / 2.0, blue: (pB + aB) / 2.0, alpha: 1.0)
+
+        // Slightly lighter version of primary for the top stop
+        let lighterPrimary = CGColor(
+            red: min(pR + 0.12, 1.0),
+            green: min(pG + 0.12, 1.0),
+            blue: min(pB + 0.12, 1.0),
+            alpha: 1.0
+        )
+
+        // 3-stop linear gradient: primary (bottom) -> blended mid -> lighter primary (top)
+        let colors = [primaryColor, midColor, lighterPrimary] as CFArray
+        let locations: [CGFloat] = [0.0, 0.6, 1.0]
 
         guard let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
@@ -265,14 +292,42 @@ struct Compositor {
             locations: locations
         ) else { return }
 
-        let startPoint = CGPoint(x: size.width * 0.5, y: size.height)
-        let endPoint = CGPoint(x: size.width * 0.5, y: 0)
+        let startPoint = CGPoint(x: size.width * 0.5, y: 0)
+        let endPoint = CGPoint(x: size.width * 0.5, y: size.height)
         context.drawLinearGradient(
             gradient,
             start: startPoint,
             end: endPoint,
             options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
         )
+
+        // Subtle radial gradient overlay centered at top-right, simulating a light source
+        context.saveGState()
+        let diagonal = sqrt(size.width * size.width + size.height * size.height)
+        let radialRadius = diagonal * 0.6
+        let radialCenter = CGPoint(x: size.width * 0.85, y: size.height * 0.85)
+
+        let radialAccent = CGColor(red: aR, green: aG, blue: aB, alpha: 0.4)
+        let radialTransparent = CGColor(red: aR, green: aG, blue: aB, alpha: 0.0)
+        let radialColors = [radialAccent, radialTransparent] as CFArray
+        let radialLocations: [CGFloat] = [0.0, 1.0]
+
+        guard let radialGradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: radialColors,
+            locations: radialLocations
+        ) else {
+            context.restoreGState()
+            return
+        }
+
+        context.drawRadialGradient(
+            radialGradient,
+            startCenter: radialCenter, startRadius: 0,
+            endCenter: radialCenter, endRadius: radialRadius,
+            options: []
+        )
+        context.restoreGState()
     }
 
     private func drawDevice(
@@ -315,8 +370,18 @@ struct Compositor {
         }
 
         // 2. Draw screenshot inside the screen area (aspect-fill)
-        drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: screenRect,
-                             cornerRadius: screenCornerRadius)
+        if screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
+            drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: screenRect,
+                                 cornerRadius: screenCornerRadius)
+        } else {
+            // Draw a light gray placeholder rectangle if screenshot cgImage is nil
+            let placeholderPath = CGPath(roundedRect: screenRect,
+                                         cornerWidth: screenCornerRadius, cornerHeight: screenCornerRadius,
+                                         transform: nil)
+            context.setFillColor(CGColor(gray: 0.85, alpha: 1.0))
+            context.addPath(placeholderPath)
+            context.fillPath()
+        }
 
         // 3. Draw Dynamic Island (iPhone only)
         if !isIPad && deviceFrame.loadFrame(for: targetSize) == nil {
@@ -351,13 +416,27 @@ struct Compositor {
 
         let cornerRadius = deviceRect.width * 0.03
 
-        // Drop shadow
-        context.setShadow(offset: CGSize(width: 0, height: -8), blur: 30,
+        // Drop shadow (increased blur for softer, more premium look)
+        context.setShadow(offset: CGSize(width: 0, height: -8), blur: 40,
                           color: CGColor(gray: 0, alpha: 0.35))
 
         // Draw the screenshot directly with rounded corners
         drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: deviceRect,
                              cornerRadius: cornerRadius)
+
+        // Reset shadow so inner stroke isn't affected
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+
+        // Subtle white inner stroke around the screenshot for a glass-edge effect
+        let innerStrokeRect = deviceRect.insetBy(dx: 0.25, dy: 0.25)
+        let innerStrokePath = CGPath(roundedRect: innerStrokeRect,
+                                     cornerWidth: cornerRadius - 0.25,
+                                     cornerHeight: cornerRadius - 0.25,
+                                     transform: nil)
+        context.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.1))
+        context.setLineWidth(0.5)
+        context.addPath(innerStrokePath)
+        context.strokePath()
 
         context.restoreGState()
     }
@@ -426,6 +505,16 @@ struct Compositor {
         context.setStrokeColor(CGColor(gray: 0.05, alpha: 0.8))
         context.setLineWidth(1)
         context.addPath(groovePath)
+        context.strokePath()
+
+        // Subtle inner shadow inside the screen rect for depth
+        let innerShadowRect = screenRect.insetBy(dx: 0.5, dy: 0.5)
+        let innerShadowPath = CGPath(roundedRect: innerShadowRect,
+                                     cornerWidth: screenRadius - 0.5, cornerHeight: screenRadius - 0.5,
+                                     transform: nil)
+        context.setStrokeColor(CGColor(gray: 0.0, alpha: 0.3))
+        context.setLineWidth(0.5)
+        context.addPath(innerShadowPath)
         context.strokePath()
 
         let buttonWidth: CGFloat = 3
@@ -512,6 +601,79 @@ struct Compositor {
         context.setFillColor(CGColor(gray: 0.0, alpha: 0.95))
         context.addPath(pillPath)
         context.fillPath()
+
+        // Subtle camera dot on the right side of the Dynamic Island pill
+        let cameraDotSize: CGFloat = 4.0
+        let cameraDotX = pillRect.maxX - pillHeight / 2  // Centered vertically within the right side
+        let cameraDotY = pillRect.midY
+        let cameraDotRect = CGRect(
+            x: cameraDotX - cameraDotSize / 2,
+            y: cameraDotY - cameraDotSize / 2,
+            width: cameraDotSize,
+            height: cameraDotSize
+        )
+        let cameraDotPath = CGPath(ellipseIn: cameraDotRect, transform: nil)
+        context.setFillColor(CGColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1.0))
+        context.addPath(cameraDotPath)
+        context.fillPath()
+    }
+
+    // MARK: - Device Reflection
+
+    /// Draws a subtle gradient highlight on the upper-left of the device body,
+    /// simulating light reflection — a thin white-to-transparent diagonal stroke.
+    private func drawDeviceReflection(context: CGContext, deviceRect: CGRect, cornerRadius: CGFloat) {
+        context.saveGState()
+
+        // Clip to the device body so the reflection doesn't bleed outside
+        let clipPath = CGPath(roundedRect: deviceRect,
+                              cornerWidth: cornerRadius, cornerHeight: cornerRadius,
+                              transform: nil)
+        context.addPath(clipPath)
+        context.clip()
+
+        // Define a diagonal line along the upper-left edge of the device
+        let reflectionLength = min(deviceRect.width, deviceRect.height) * 0.5
+        let startX = deviceRect.minX + deviceRect.width * 0.05
+        let startY = deviceRect.maxY - deviceRect.height * 0.05
+        let endX = startX + reflectionLength * 0.7
+        let endY = startY - reflectionLength * 0.7
+
+        // Create a gradient from white (subtle) to transparent along the reflection
+        let colors = [
+            CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.15),
+            CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.0)
+        ] as CFArray
+        let locations: [CGFloat] = [0.0, 1.0]
+
+        guard let gradient = CGGradient(
+            colorsSpace: CGColorSpaceCreateDeviceRGB(),
+            colors: colors,
+            locations: locations
+        ) else {
+            context.restoreGState()
+            return
+        }
+
+        // Draw the reflection as a thin stroked path with gradient
+        let reflectionPath = CGMutablePath()
+        reflectionPath.move(to: CGPoint(x: startX, y: startY))
+        reflectionPath.addLine(to: CGPoint(x: endX, y: endY))
+
+        context.setLineWidth(2.0)
+        context.setLineCap(.round)
+        context.addPath(reflectionPath)
+        context.replacePathWithStrokedPath()
+        context.clip()
+
+        context.drawLinearGradient(
+            gradient,
+            start: CGPoint(x: startX, y: startY),
+            end: CGPoint(x: endX, y: endY),
+            options: []
+        )
+
+        context.restoreGState()
     }
 
     // MARK: - Full Bleed Drawing Helpers
@@ -535,11 +697,13 @@ struct Compositor {
 
     private func drawGradientScrim(context: CGContext, rect: CGRect) {
         context.saveGState()
+        // 3-stop gradient for a more gradual fade that protects text readability better
         let colors = [
-            CGColor(gray: 0, alpha: 0.85),
-            CGColor(gray: 0, alpha: 0.0)
+            CGColor(gray: 0, alpha: 0.9),   // Bottom: strong black for text contrast
+            CGColor(gray: 0, alpha: 0.5),   // Mid: gradual transition
+            CGColor(gray: 0, alpha: 0.0)    // Top: fully transparent
         ] as CFArray
-        let locations: [CGFloat] = [0.0, 1.0]
+        let locations: [CGFloat] = [0.0, 0.4, 1.0]
         guard let gradient = CGGradient(
             colorsSpace: CGColorSpaceCreateDeviceRGB(),
             colors: colors,
@@ -559,9 +723,14 @@ struct Compositor {
 
     // MARK: - Color Conversion
 
-    private func hexToColor(_ hex: String) -> CGColor {
+    private func hexToColor(_ hex: String, isTextColor: Bool = false) -> CGColor {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
+
+        // If the hex string is empty, return a sensible default
+        if hexSanitized.isEmpty {
+            return isTextColor ? CGColor(gray: 1.0, alpha: 1.0) : CGColor(gray: 0, alpha: 1.0)
+        }
 
         if hexSanitized.count == 3 {
             hexSanitized = hexSanitized.map { "\($0)\($0)" }.joined()
@@ -569,7 +738,7 @@ struct Compositor {
 
         guard hexSanitized.count == 6,
               hexSanitized.allSatisfy({ $0.isHexDigit }) else {
-            return CGColor(gray: 0, alpha: 1.0)
+            return isTextColor ? CGColor(gray: 1.0, alpha: 1.0) : CGColor(gray: 0, alpha: 1.0)
         }
 
         var rgb: UInt64 = 0

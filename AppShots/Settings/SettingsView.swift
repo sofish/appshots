@@ -7,10 +7,43 @@ struct SettingsView: View {
     @State private var llmTestResult: TestResult?
     @State private var geminiTestResult: TestResult?
     @State private var isTesting = false
+    @State private var copyConfirmation = false
 
     enum TestResult {
         case success(String)
         case failure(String)
+    }
+
+    /// Connection status indicator color for LLM
+    private var llmStatusColor: Color {
+        if let result = llmTestResult {
+            switch result {
+            case .success: return .green
+            case .failure: return .red
+            }
+        }
+        return .gray
+    }
+
+    /// Connection status indicator color for Gemini
+    private var geminiStatusColor: Color {
+        if let result = geminiTestResult {
+            switch result {
+            case .success: return .green
+            case .failure: return .red
+            }
+        }
+        return .gray
+    }
+
+    /// Whether the LLM URL is valid (starts with http)
+    private var isLLMURLValid: Bool {
+        appState.llmBaseURL.isEmpty || appState.llmBaseURL.lowercased().hasPrefix("http")
+    }
+
+    /// Whether the Gemini URL is valid (starts with http)
+    private var isGeminiURLValid: Bool {
+        appState.geminiBaseURL.isEmpty || appState.geminiBaseURL.lowercased().hasPrefix("http")
     }
 
     var body: some View {
@@ -25,17 +58,27 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 500, height: 400)
+        .frame(width: 550, height: 450)
     }
 
     // MARK: - API Settings
 
     private var apiSettings: some View {
         Form {
-            Section("LLM API (Plan Generation)") {
+            Section {
                 TextField("https://api.anthropic.com", text: $appState.llmBaseURL)
                     .textFieldStyle(.roundedBorder)
                     .help("Anthropic Messages API endpoint")
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isLLMURLValid ? Color.clear : Color.red.opacity(0.6), lineWidth: 1)
+                    )
+
+                if !isLLMURLValid {
+                    Text("URL must start with http:// or https://")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
 
                 SecureField("sk-ant-...", text: $appState.llmAPIKey)
                     .textFieldStyle(.roundedBorder)
@@ -43,12 +86,33 @@ struct SettingsView: View {
                 TextField("claude-sonnet-4-20250514", text: $appState.llmModel)
                     .textFieldStyle(.roundedBorder)
                     .help("Anthropic model ID")
+
+                Text("Popular: claude-sonnet-4-20250514, claude-haiku-4-20250414, claude-opus-4-20250514")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } header: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(llmStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text("LLM API (Plan Generation)")
+                }
             }
 
-            Section("Image Generation API (Backgrounds)") {
+            Section {
                 TextField("https://generativelanguage.googleapis.com/v1beta/openai", text: $appState.geminiBaseURL)
                     .textFieldStyle(.roundedBorder)
                     .help("OpenAI-compatible endpoint")
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isGeminiURLValid ? Color.clear : Color.red.opacity(0.6), lineWidth: 1)
+                    )
+
+                if !isGeminiURLValid {
+                    Text("URL must start with http:// or https://")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
 
                 SecureField("API Key", text: $appState.geminiAPIKey)
                     .textFieldStyle(.roundedBorder)
@@ -56,6 +120,17 @@ struct SettingsView: View {
                 TextField("gemini-2.0-flash-preview-image-generation", text: $appState.geminiModel)
                     .textFieldStyle(.roundedBorder)
                     .help("Image generation model ID")
+
+                Text("Popular: gemini-2.0-flash-preview-image-generation, gemini-2.0-flash-exp")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } header: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(geminiStatusColor)
+                        .frame(width: 8, height: 8)
+                    Text("Image Generation API (Backgrounds)")
+                }
             }
 
             Section {
@@ -94,6 +169,22 @@ struct SettingsView: View {
                 if let result = geminiTestResult {
                     testResultView("Image Gen", result: result)
                 }
+
+                // Copy Configuration button
+                HStack {
+                    Spacer()
+                    Button {
+                        copyConfiguration()
+                    } label: {
+                        Label(
+                            copyConfirmation ? "Copied!" : "Copy Configuration",
+                            systemImage: copyConfirmation ? "checkmark" : "doc.on.doc"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Spacer()
+                }
             }
         }
         .padding()
@@ -114,6 +205,33 @@ struct SettingsView: View {
                 Text("\(label): \(msg)")
                     .font(.caption)
                     .foregroundStyle(.red)
+            }
+        }
+    }
+
+    // MARK: - Copy Configuration
+
+    private func copyConfiguration() {
+        let config: [String: Any] = [
+            "llm": [
+                "baseURL": appState.llmBaseURL,
+                "model": appState.llmModel
+            ],
+            "imageGeneration": [
+                "baseURL": appState.geminiBaseURL,
+                "model": appState.geminiModel
+            ]
+        ]
+
+        if let jsonData = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            #if canImport(AppKit)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(jsonString, forType: .string)
+            #endif
+            copyConfirmation = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                copyConfirmation = false
             }
         }
     }
@@ -196,7 +314,7 @@ struct SettingsView: View {
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
-                        detail += " — \(message)"
+                        detail += " -- \(message)"
                     }
                     llmTestResult = .failure(detail)
                 }
@@ -251,7 +369,7 @@ struct SettingsView: View {
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                        let error = json["error"] as? [String: Any],
                        let message = error["message"] as? String {
-                        detail += " — \(message)"
+                        detail += " -- \(message)"
                     }
                     geminiTestResult = .failure(detail)
                 }

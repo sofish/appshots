@@ -16,6 +16,7 @@ actor BackgroundGenerator {
         case noBaseURL
         case generationFailed(String)
         case invalidImageData
+        case timeout(Int)
 
         var errorDescription: String? {
             switch self {
@@ -24,6 +25,7 @@ actor BackgroundGenerator {
             case .noBaseURL: return "No image generation base URL configured. Set it in Settings."
             case .generationFailed(let msg): return "Image generation failed: \(msg)"
             case .invalidImageData: return "Generated image data is invalid."
+            case .timeout(let seconds): return "Image generation timed out after \(seconds) seconds."
             }
         }
     }
@@ -52,7 +54,7 @@ actor BackgroundGenerator {
             for prompt in prompts {
                 let screenshotData = screenshotDataMap[prompt.screenIndex]
                 group.addTask {
-                    let imageData = try await self.generateSingle(prompt: prompt, screenshotData: screenshotData)
+                    let imageData = try await self.generateWithRetry(prompt: prompt, screenshotData: screenshotData)
                     onProgress(prompt.screenIndex, imageData)
                     return (prompt.screenIndex, imageData)
                 }
@@ -64,6 +66,51 @@ actor BackgroundGenerator {
             }
             return results
         }
+    }
+
+    // MARK: - Generate with retry logic
+
+    private func generateWithRetry(
+        prompt: ImagePrompt,
+        screenshotData: Data? = nil,
+        maxRetries: Int = 2
+    ) async throws -> Data {
+        let timeoutSeconds: UInt64 = 90
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            if attempt > 0 {
+                let delay = attempt == 1 ? 2 : 4
+                print("[BackgroundGenerator] Retry attempt \(attempt)/\(maxRetries) for screen \(prompt.screenIndex) after \(delay)s delay")
+                try await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000_000)
+            }
+
+            do {
+                let result = try await withThrowingTaskGroup(of: Data.self) { group in
+                    group.addTask {
+                        try await self.generateSingle(prompt: prompt, screenshotData: screenshotData)
+                    }
+                    group.addTask {
+                        try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                        throw GeneratorError.timeout(Int(timeoutSeconds))
+                    }
+
+                    let data = try await group.next()!
+                    group.cancelAll()
+                    return data
+                }
+                return result
+            } catch {
+                lastError = error
+                if error is GeneratorError, case GeneratorError.timeout = error {
+                    print("[BackgroundGenerator] Generation timed out after \(timeoutSeconds)s for screen \(prompt.screenIndex)")
+                } else {
+                    print("[BackgroundGenerator] Generation failed for screen \(prompt.screenIndex): \(error.localizedDescription)")
+                }
+            }
+        }
+
+        throw lastError!
     }
 
     // MARK: - Generate single background (OpenAI-compatible Chat Completions)
