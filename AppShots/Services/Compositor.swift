@@ -483,6 +483,7 @@ struct Compositor {
     }
 
     /// Draw iPad home indicator bar at the bottom of the screen.
+    /// Note: Core Graphics origin is bottom-left, so minY = visual bottom.
     private func drawHomeIndicator(context: CGContext, screenRect: CGRect) {
         let indicatorWidth = screenRect.width * 0.30
         let indicatorHeight = screenRect.width * 0.005

@@ -27,14 +27,14 @@ enum iPadLayoutType: String, Codable, CaseIterable, Identifiable {
         case .uiForward: return "UI Forward"
         case .multiOrientation: return "Multi-Orientation"
         case .darkLightDual: return "Dark/Light Split"
-        case .splitPanel: return "Split Panel"
+        case .splitPanel: return "Side Text"
         case .beforeAfter: return "Before/After"
         }
     }
 
     /// Tier 1 layouts (fully implemented in compositor)
-    /// Fully implemented layouts available in the UI picker
-    static let tier1Cases: [iPadLayoutType] = [.standard, .angled, .frameless, .headlineDominant, .uiForward, .darkLightDual, .splitPanel]
+    /// All fully implemented layouts available in the UI picker
+    static let supportedCases: [iPadLayoutType] = [.standard, .angled, .frameless, .headlineDominant, .uiForward, .darkLightDual, .splitPanel]
 
     /// Derive an iPad layout from iPhone layout modifiers
     static func fromIPhoneModifiers(tilt: Bool, position: String, fullBleed: Bool) -> iPadLayoutType {

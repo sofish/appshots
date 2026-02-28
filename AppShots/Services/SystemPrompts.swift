@@ -181,7 +181,7 @@ enum SystemPrompts {
     ### JSON Schema — add `ipad_config` to each screen:
     ```json
     "ipad_config": {
-        "layout_type": "standard|angled|frameless|headline_dominant|ui_forward",
+        "layout_type": "standard|angled|frameless|headline_dominant|ui_forward|dark_light_dual|split_panel",
         "orientation": "portrait",
         "image_prompt": "iPad-specific creative prompt mentioning iPad Pro, resolution, and layout type...",
         "visual_direction": "iPad-specific background description..."
@@ -189,7 +189,7 @@ enum SystemPrompts {
     ```
     - The `image_prompt` field is REQUIRED and must be iPad-specific (not a copy of the iPhone prompt)
     - Use "portrait" orientation unless the app has a strong landscape use case
-    - Keep Tier 1 layouts only (standard, angled, frameless, headline_dominant, ui_forward)
+    - Supported layouts: standard, angled, frameless, headline_dominant, ui_forward, dark_light_dual, split_panel
     """
 
     // MARK: - User-Facing Prompt Template

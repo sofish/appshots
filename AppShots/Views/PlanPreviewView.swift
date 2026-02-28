@@ -296,7 +296,7 @@ struct ScreenCardView: View {
 
                     Picker("Layout", selection: iPadLayoutBinding) {
                         // Show fully implemented layouts
-                        ForEach(iPadLayoutType.tier1Cases) { layout in
+                        ForEach(iPadLayoutType.supportedCases) { layout in
                             Text(layout.displayName).tag(layout)
                         }
                     }

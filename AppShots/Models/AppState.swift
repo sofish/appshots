@@ -192,7 +192,7 @@ final class AppState: ObservableObject {
                 // Step B: Build screenshot data map (screenIndex → screenshot data)
                 var screenshotDataMap: [Int: Data] = [:]
                 for screen in screenPlan.screens {
-                    if screen.screenshotMatch < screenshots.count {
+                    if screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count {
                         let ssData = screenshots[screen.screenshotMatch].imageData
                         screenshotDataMap[screen.index] = ssData
                         // iPad prompts use offset indices (index + 1000)
