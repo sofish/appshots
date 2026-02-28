@@ -447,7 +447,7 @@ import Observation
             var results: [NSImage] = []
 
             for screen in screenPlan.screens {
-                guard screen.screenshotMatch < screenshots.count else { continue }
+                guard screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count else { continue }
 
                 let screenshot = screenshots[screen.screenshotMatch].nsImage
 
@@ -511,13 +511,16 @@ import Observation
                         format: exportConfig.format,
                         jpegQuality: exportConfig.jpegQuality
                     )
-                    let headings = screenPlan.screens.sorted(by: { $0.index < $1.index }).map { $0.heading as String? }
+                    // Filter headings to match composedImages (compactMap skips screens without backgrounds)
+                    let iPhoneHeadings = screenPlan.screens.sorted(by: { $0.index < $1.index })
+                        .filter { backgroundImages[$0.index] != nil }
+                        .map { $0.heading as String? }
                     let iPhoneResults = try exporter.exportAll(
                         images: composedImages,
                         appName: exportAppName,
                         config: iPhoneConfig,
                         outputDirectory: directory,
-                        screenHeadings: headings
+                        screenHeadings: iPhoneHeadings
                     ) { completed, total in
                         Task { @MainActor in
                             self.loadingMessage = "Exporting iPhone \(completed)/\(total)"
@@ -533,7 +536,9 @@ import Observation
                         format: exportConfig.format,
                         jpegQuality: exportConfig.jpegQuality
                     )
-                    let iPadHeadings = screenPlan.screens.sorted(by: { $0.index < $1.index }).map { $0.heading as String? }
+                    let iPadHeadings = screenPlan.screens.sorted(by: { $0.index < $1.index })
+                        .filter { iPadBackgroundImages[$0.index] != nil }
+                        .map { $0.heading as String? }
                     let iPadResults = try exporter.exportAll(
                         images: iPadComposedImages,
                         appName: exportAppName,
@@ -567,7 +572,7 @@ import Observation
     func recomposeSingle(screenIndex: Int, deviceType: DeviceType = .iPhone) {
         guard screenIndex < screenPlan.screens.count else { return }
         let screen = screenPlan.screens[screenIndex]
-        guard screen.screenshotMatch < screenshots.count else { return }
+        guard screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count else { return }
 
         let screenshot = screenshots[screen.screenshotMatch].nsImage
         let targetSize = deviceType.defaultSize

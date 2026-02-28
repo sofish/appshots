@@ -178,7 +178,7 @@ struct GeneratingView: View {
         let iPhoneComplete = appState.backgroundImages[screen.index] != nil
         let iPadComplete = appState.iPadBackgroundImages[screen.index] != nil
         let allComplete = iPhoneComplete && (!appState.generateIPad || iPadComplete)
-        let screenshotItem: ScreenshotItem? = screen.screenshotMatch < appState.screenshots.count ? appState.screenshots[screen.screenshotMatch] : nil
+        let screenshotItem: ScreenshotItem? = screen.screenshotMatch >= 0 && screen.screenshotMatch < appState.screenshots.count ? appState.screenshots[screen.screenshotMatch] : nil
 
         return VStack(spacing: 6) {
             ZStack {
@@ -245,8 +245,7 @@ struct GeneratingView: View {
 
             if appState.isLoading {
                 Button("Cancel Generation") {
-                    // Reset loading state
-                    appState.isLoading = false
+                    appState.cancelGeneration()
                 }
                 .buttonStyle(.bordered)
                 .foregroundStyle(.red)
@@ -256,8 +255,7 @@ struct GeneratingView: View {
             // Allow advancing when generation is done or has partial results
             if !appState.isLoading && !appState.backgroundImages.isEmpty {
                 Button(appState.generationProgress >= 1.0 ? "Continue to Export" : "Continue with \(appState.backgroundImages.count) screenshots") {
-                    // Skip composing step — Gemini output is used directly as final images
-                    appState.currentStep = .export
+                    appState.goToStep(.export)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)

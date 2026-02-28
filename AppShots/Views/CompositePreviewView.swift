@@ -491,7 +491,7 @@ struct CompositePreviewView: View {
             .buttonStyle(.bordered)
 
             Button("Export") {
-                appState.currentStep = .export
+                appState.goToStep(.export)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
