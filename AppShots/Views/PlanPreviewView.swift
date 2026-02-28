@@ -319,7 +319,7 @@ struct PlanPreviewView: View {
                     ScreenCardView(
                         screen: binding(for: index),
                         index: index,
-                        screenshotItem: index < appState.screenshots.count ? appState.screenshots[index] : nil,
+                        screenshotItem: screen.screenshotMatch >= 0 && screen.screenshotMatch < appState.screenshots.count ? appState.screenshots[screen.screenshotMatch] : nil,
                         isCollapsed: allCardsCollapsed
                     )
                     .opacity(draggingScreenID == screen.id ? 0.4 : 1.0)

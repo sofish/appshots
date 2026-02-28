@@ -484,7 +484,7 @@ import Observation
 
             isLoading = false
             if !results.isEmpty {
-                currentStep = .export
+                goToStep(.export)
             }
         }
     }
@@ -617,12 +617,10 @@ import Observation
     func regenerateBackground(screenIndex: Int) {
         guard screenIndex < screenPlan.screens.count else { return }
         let screen = screenPlan.screens[screenIndex]
-        guard screen.index < imagePrompts.count else { return }
-        let prompt = imagePrompts.first { $0.screenIndex == screen.index }
-            ?? imagePrompts[min(screenIndex, imagePrompts.count - 1)]
+        guard let prompt = imagePrompts.first(where: { $0.screenIndex == screen.index }) else { return }
 
         // Get screenshot data for multimodal generation
-        let screenshotData: Data? = screen.screenshotMatch < screenshots.count
+        let screenshotData: Data? = screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count
             ? screenshots[screen.screenshotMatch].imageData
             : nil
 
