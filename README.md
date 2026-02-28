@@ -22,7 +22,9 @@ AppShots takes your raw app screenshots and a structured Markdown file describin
 
 ### Generated Result
 
-![Generated App Store screenshot](screens/generate_result.png)
+| iPhone 6.9" | iPad 13" |
+|---|---|
+| ![iPhone](screens/dotmd_iphone_6.9_0.png) | ![iPad](screens/dotmd_ipad_13_0.png) |
 
 ## Requirements
 
