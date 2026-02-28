@@ -3,7 +3,7 @@ import SwiftUI
 /// Main application view with step-based navigation.
 /// Uses NavigationSplitView for native macOS sidebar.
 struct ContentView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
 
     var body: some View {
         NavigationSplitView {
@@ -11,9 +11,11 @@ struct ContentView: View {
         } detail: {
             mainContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.easeInOut(duration: 0.2), value: appState.currentStep)
         }
         .navigationSplitViewStyle(.balanced)
-        .alert("Error", isPresented: $appState.showError) {
+        .navigationSubtitle(appState.currentStep.title)
+        .alert("Error", isPresented: Bindable(appState).showError) {
             Button("OK") { appState.dismissError() }
         } message: {
             Text(appState.errorMessage ?? "An unknown error occurred.")
@@ -54,7 +56,9 @@ struct ContentView: View {
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 if step.rawValue <= appState.currentStep.rawValue {
-                                    appState.goToStep(step)
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        appState.goToStep(step)
+                                    }
                                 }
                             }
                     }
@@ -63,7 +67,7 @@ struct ContentView: View {
                 .padding(.horizontal, 16)
             }
         }
-        .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 260)
+        .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 280)
         .padding(.trailing, 20)
         .safeAreaInset(edge: .bottom) {
             SettingsButton()
@@ -98,8 +102,9 @@ struct ContentView: View {
 struct StepRow: View {
     let step: AppState.Step
     let showConnector: Bool
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var pulseScale: CGFloat = 1.0
+    @State private var isHovered = false
 
     private var isCompleted: Bool {
         step.rawValue < appState.currentStep.rawValue
@@ -132,14 +137,9 @@ struct StepRow: View {
         case .generating:
             let count = appState.backgroundImages.count
             return count > 0 ? "\(count) generated" : nil
-        #if canImport(AppKit)
         case .composing:
             let count = appState.composedImages.count
             return count > 0 ? "\(count) composed" : nil
-        #else
-        case .composing:
-            return nil
-        #endif
         case .export:
             return nil
         }
@@ -235,15 +235,9 @@ struct StepRow: View {
                     .fontWeight(isCurrent ? .semibold : .regular)
                     .foregroundStyle(isAccessible ? .primary : .secondary)
 
-                if isCurrent {
-                    Text("\(step.subtitle)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(step.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
+                Text(step.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 // Completion summary under completed steps
                 if let summary = completionSummary {
@@ -256,7 +250,15 @@ struct StepRow: View {
             .padding(.top, 6)
 
             Spacer()
+
+            if isHovered && isAccessible {
+                Text("\u2318\(step.rawValue + 1)")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .transition(.opacity)
+            }
         }
+        .onHover { isHovered = $0 }
         .frame(minHeight: 60)
         .opacity(isAccessible ? 1 : 0.5)
         .accessibilityLabel("Step \(step.rawValue + 1): \(step.title), \(step.subtitle)")

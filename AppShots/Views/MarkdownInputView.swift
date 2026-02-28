@@ -1,13 +1,12 @@
 import SwiftUI
-#if canImport(AppKit)
 import AppKit
-#endif
+import UniformTypeIdentifiers
 
 /// Step 1: Markdown input view.
 /// Users can type/paste Markdown or import from a file.
 /// Includes a "Copy Prompt" button for the LLM prompt template.
 struct MarkdownInputView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var showCopiedToast = false
     @State private var parsedDescriptor: AppDescriptor?
     @State private var parseDebounceTask: Task<Void, Never>?
@@ -103,16 +102,18 @@ struct MarkdownInputView: View {
                 Label("Sample", systemImage: "text.document")
             }
             .buttonStyle(.bordered)
+            .keyboardShortcut("s", modifiers: [.command, .shift])
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
     // MARK: - Editor Pane
 
     private var editorPane: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        @Bindable var appState = appState
+        return VStack(alignment: .leading, spacing: 0) {
             Text("Markdown Editor")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -126,7 +127,8 @@ struct MarkdownInputView: View {
 
             // Character count footer
             HStack {
-                Text("\(appState.markdownText.count) characters")
+                let wordCount = appState.markdownText.split(separator: " ", omittingEmptySubsequences: true).count
+                Text("\(appState.markdownText.count) characters \u{00B7} \(wordCount) words \u{00B7} \(appState.markdownText.components(separatedBy: .newlines).count) lines")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer()
@@ -134,7 +136,19 @@ struct MarkdownInputView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color(.textBackgroundColor))
+        .onDrop(of: [UTType.plainText, UTType.utf8PlainText], isTargeted: nil) { providers in
+            for provider in providers {
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.plainText.identifier) { data, _ in
+                    if let data = data, let text = String(data: data, encoding: .utf8) {
+                        Task { @MainActor in
+                            appState.markdownText = text
+                        }
+                    }
+                }
+            }
+            return true
+        }
     }
 
     // MARK: - Preview Pane
@@ -156,20 +170,42 @@ struct MarkdownInputView: View {
             }
             .padding(8)
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
     private var emptyPreview: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Image(systemName: "doc.text")
                 .font(.system(size: 48))
                 .foregroundStyle(.quaternary)
-            Text("Start typing or paste your Markdown")
-                .foregroundStyle(.secondary)
-            Text("Use the \"Copy Prompt\" button to get a template for generating the Markdown with any LLM.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
+
+            VStack(spacing: 8) {
+                Text("Start typing or paste your Markdown")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+
+                Text("Describe your app using the expected Markdown format to generate App Store screenshots.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Divider()
+                .frame(width: 120)
+
+            VStack(spacing: 6) {
+                Label("Copy Prompt -- get a template for any LLM", systemImage: "doc.on.doc")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Label("Import -- load a .md file from disk", systemImage: "doc.badge.plus")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Label("Drag & drop a .md file onto the editor", systemImage: "arrow.down.doc")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
@@ -294,6 +330,7 @@ struct MarkdownInputView: View {
             .controlSize(.large)
             .disabled(appState.markdownText.isEmpty)
             .keyboardShortcut(.return, modifiers: .command)
+            .help("Parse the markdown and continue to screenshot upload")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -303,10 +340,8 @@ struct MarkdownInputView: View {
     // MARK: - Actions
 
     private func copyPromptTemplate() {
-        #if canImport(AppKit)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(SystemPrompts.userPromptTemplate, forType: .string)
-        #endif
         showCopiedToast = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
             showCopiedToast = false
@@ -314,7 +349,6 @@ struct MarkdownInputView: View {
     }
 
     private func importMarkdownFile() {
-        #if canImport(AppKit)
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.plainText]
         panel.allowsMultipleSelection = false
@@ -325,7 +359,6 @@ struct MarkdownInputView: View {
                 appState.markdownText = content
             }
         }
-        #endif
     }
 
     private func loadSampleMarkdown() {

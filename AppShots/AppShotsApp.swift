@@ -1,12 +1,11 @@
 import SwiftUI
-#if canImport(AppKit)
 import AppKit
-#endif
 
 @main
 struct AppShotsApp: App {
-    @StateObject private var appState = AppState()
+    @State private var appState = AppState()
     @State private var showGettingStarted = false
+    @AppStorage("hasSeenGettingStarted") private var hasSeenGettingStarted = false
 
     /// Whether the user can jump to a given step (must have completed all prior steps).
     private func canJumpToStep(_ step: AppState.Step) -> Bool {
@@ -23,23 +22,26 @@ struct AppShotsApp: App {
     var body: some Scene {
         WindowGroup("AppShots") {
             ContentView()
-                .environmentObject(appState)
+                .environment(appState)
                 .frame(minWidth: 960, minHeight: 640)
                 .onAppear {
-                    #if canImport(AppKit)
                     NSApp.setActivationPolicy(.regular)
                     DispatchQueue.main.async {
                         NSApp.activate(ignoringOtherApps: true)
                         NSApp.windows.first?.makeKeyAndOrderFront(nil)
                     }
-                    #endif
                     appState.restoreProgress()
+                    if !hasSeenGettingStarted {
+                        showGettingStarted = true
+                        hasSeenGettingStarted = true
+                    }
                 }
                 .sheet(isPresented: $showGettingStarted) {
                     GettingStartedSheet(isPresented: $showGettingStarted)
                 }
         }
         .windowStyle(.titleBar)
+        .windowResizability(.contentSize)
         .defaultSize(width: 1200, height: 800)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -104,15 +106,20 @@ struct AppShotsApp: App {
                 }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(appState.currentStep != .export)
+
+                Divider()
+
+                Button("Reset Workflow") {
+                    appState.goToStep(.markdown)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }
 
-        #if os(macOS)
         Settings {
             SettingsView()
-                .environmentObject(appState)
+                .environment(appState)
         }
-        #endif
     }
 }
 
@@ -130,6 +137,18 @@ struct GettingStartedSheet: View {
 
     var body: some View {
         VStack(spacing: 24) {
+            HStack {
+                Spacer()
+                Button {
+                    isPresented = false
+                } label: {
+                    Text("\u00d7")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
             Text("Getting Started with AppShots")
                 .font(.title2.bold())
 

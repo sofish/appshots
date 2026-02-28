@@ -81,6 +81,14 @@ struct ImagePrompt: Identifiable, Codable, Equatable {
     var isMinimal: Bool {
         wordCount < 10
     }
+
+    /// Truncated prompt for display purposes (max 80 characters).
+    var truncatedPrompt: String {
+        if prompt.count <= 80 {
+            return prompt
+        }
+        return String(prompt.prefix(77)) + "..."
+    }
 }
 
 // MARK: - Image Prompt Set

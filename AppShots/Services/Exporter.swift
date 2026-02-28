@@ -1,5 +1,4 @@
 import Foundation
-#if canImport(AppKit)
 import AppKit
 import CoreImage
 
@@ -81,7 +80,11 @@ struct Exporter {
                     )
                 }
 
-                try data.write(to: filePath)
+                do {
+                    try data.write(to: filePath)
+                } catch {
+                    throw ExporterError.writeFailed(filePath.path)
+                }
 
                 let result = ExportResult(
                     filePath: filePath,
@@ -112,6 +115,11 @@ struct Exporter {
         heading: String? = nil,
         totalCount: Int = 10
     ) throws -> ExportResult {
+        // Validate output directory is writable
+        guard FileManager.default.isWritableFile(atPath: outputDirectory.path) else {
+            throw ExporterError.directoryNotWritable(outputDirectory.path)
+        }
+
         let resized = resize(image: image, to: size)
         let data = try encode(image: resized, format: format, quality: quality)
 
@@ -125,7 +133,11 @@ struct Exporter {
             fileName = "\(sanitizeFileName(appName))_\(size.id)_\(paddedIndex).\(format.fileExtension)"
         }
         let filePath = outputDirectory.appendingPathComponent(fileName)
-        try data.write(to: filePath)
+        do {
+            try data.write(to: filePath)
+        } catch {
+            throw ExporterError.writeFailed(filePath.path)
+        }
 
         return ExportResult(
             filePath: filePath,
@@ -282,4 +294,3 @@ private extension NSImage {
         return NSSize(width: rep.pixelsWide, height: rep.pixelsHigh)
     }
 }
-#endif

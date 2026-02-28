@@ -55,7 +55,10 @@ actor LLMService {
                 return "API configuration is incomplete. Open Settings to configure your API keys."
             case .invalidResponse:
                 return "The API returned an unexpected response. Please try again."
-            case .decodingFailed:
+            case .decodingFailed(let detail):
+                if detail.contains("API error") {
+                    return "The API returned an error. Check your API key and model settings."
+                }
                 return "The API response could not be understood. The format may have changed."
             case .emptyResponse:
                 return "The API returned an empty response. Please try again."

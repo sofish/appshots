@@ -52,6 +52,13 @@ struct PromptEditorSheet: View {
                     .font(.headline)
                 Spacer()
 
+                Button("Clear") {
+                    imagePrompt = ""
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(imagePrompt.isEmpty)
+
                 Button("Reset to Default") {
                     imagePrompt = originalPrompt
                 }
@@ -82,7 +89,7 @@ struct PromptEditorSheet: View {
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(nsColor: .textBackgroundColor))
+                        .fill(Color(.textBackgroundColor))
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(.quaternary, lineWidth: 1)

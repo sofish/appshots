@@ -207,6 +207,44 @@ struct ScreenPlan: Codable, Equatable {
         validate().isEmpty
     }
 
+    /// Randomizes the positions and tilt values while maintaining good variety.
+    mutating func shuffleLayouts() {
+        let positions = ["center", "left", "right"]
+        for i in screens.indices {
+            screens[i].position = positions[i % positions.count]
+            screens[i].tilt = (i % 3 == 1) // Every 3rd screen gets tilt
+        }
+    }
+
+    /// Duplicates the screen at the given index and appends the copy to the end.
+    mutating func duplicateScreen(at index: Int) {
+        guard index >= 0 && index < screens.count else { return }
+        var copy = screens[index]
+        copy = ScreenConfig(
+            index: screens.count,
+            screenshotMatch: copy.screenshotMatch,
+            heading: copy.heading,
+            subheading: copy.subheading,
+            tilt: copy.tilt,
+            position: copy.position,
+            fullBleed: copy.fullBleed,
+            visualDirection: copy.visualDirection,
+            imagePrompt: copy.imagePrompt,
+            iPadConfig: copy.iPadConfig
+        )
+        screens.append(copy)
+    }
+
+    /// Removes the screen at the given index and re-indexes remaining screens.
+    mutating func removeScreen(at index: Int) {
+        guard index >= 0 && index < screens.count else { return }
+        screens.remove(at: index)
+        // Re-index remaining screens
+        for i in screens.indices {
+            screens[i].index = i
+        }
+    }
+
     /// Scores the overall headline quality (0.0-1.0).
     /// +0.2 for each headline starting with a verb, +0.1 for 3-5 word headlines,
     /// -0.1 for headlines over 7 words. Normalized to 0.0-1.0 range.

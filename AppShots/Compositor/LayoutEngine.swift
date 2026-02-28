@@ -26,6 +26,22 @@ struct LayoutEngine {
         var gradientScrimRect: CGRect? = nil        // fullBleed: gradient overlay area
         var isFrameless: Bool = false               // frameless: rounded corners + shadow, no bezel
         var textAlignedToDevice: Bool = false       // true for left/right layouts (text aligns beside device)
+
+        /// A zeroed-out layout result for edge cases (e.g., zero-size canvas).
+        static let zero = LayoutResult(
+            headingRect: .zero,
+            subheadingRect: .zero,
+            deviceRect: .zero,
+            screenInset: .zero,
+            headingFontSize: 0,
+            subheadingFontSize: 0,
+            rotationAngle: 0
+        )
+
+        /// Human-readable summary of the layout for debugging.
+        var description: String {
+            "Layout(device: \(Int(deviceRect.width))x\(Int(deviceRect.height)), heading: \(Int(headingRect.width))x\(Int(headingRect.height)), rotation: \(rotationAngle)°)"
+        }
     }
 
     // MARK: - Shared Constants
@@ -44,6 +60,10 @@ struct LayoutEngine {
         hasSubheading: Bool,
         deviceType: DeviceType = .iPhone
     ) -> LayoutResult {
+        guard canvasSize.width > 0 && canvasSize.height > 0 else {
+            return LayoutResult.zero
+        }
+
         let deviceAspect = deviceType.aspectRatio
 
         if deviceType == .iPad {

@@ -1,34 +1,56 @@
 import SwiftUI
-#if canImport(AppKit)
 import AppKit
-#endif
 
 /// Step 6: Export view.
 /// Allows users to select sizes, format, and export location.
 /// Supports batch export for multiple device sizes.
 struct ExportView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) private var appState
     @State private var isExporting = false
     @State private var exportComplete = false
     @State private var exportStartTime: Date?
     @State private var exportDuration: TimeInterval?
+    @State private var showExportSuccess = false
 
     private var hasNoScreenshots: Bool {
-        #if canImport(AppKit)
         return appState.composedImages.isEmpty && appState.iPadComposedImages.isEmpty
-        #else
-        return true
-        #endif
     }
 
     var body: some View {
+        @Bindable var appState = appState
         VStack(spacing: 0) {
+            if showExportSuccess {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text("Export complete!")
+                        .font(.callout.bold())
+                    Spacer()
+                    Button("Dismiss") {
+                        withAnimation { showExportSuccess = false }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color.green.opacity(0.1))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if hasNoScreenshots {
                 emptyStateView
             } else {
                 exportOptions
                 Divider()
                 footer
+            }
+        }
+        .onChange(of: appState.isLoading) { _, isLoading in
+            if !isLoading && exportStartTime != nil {
+                exportDuration = Date().timeIntervalSince(exportStartTime!)
+                exportStartTime = nil
+                withAnimation { showExportSuccess = true }
             }
         }
     }
@@ -94,7 +116,6 @@ struct ExportView: View {
 
         for size in selectedDeviceSizes {
             let pixelCount = Double(size.width * size.height)
-            #if canImport(AppKit)
             let imageCount: Int
             if size.deviceType == .iPad {
                 imageCount = appState.iPadComposedImages.count
@@ -102,7 +123,6 @@ struct ExportView: View {
                 imageCount = appState.composedImages.count
             }
             totalBytes += pixelCount * bytesPerPixel * Double(imageCount)
-            #endif
         }
 
         return Int(totalBytes)
@@ -198,7 +218,6 @@ struct ExportView: View {
 
             ScrollView(.horizontal) {
                 HStack(spacing: 12) {
-                    #if canImport(AppKit)
                     ForEach(Array(appState.composedImages.enumerated()), id: \.offset) { index, image in
                         VStack(spacing: 4) {
                             Image(nsImage: image)
@@ -207,6 +226,7 @@ struct ExportView: View {
                                 .frame(height: 160)
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                                 .shadow(color: .black.opacity(0.1), radius: 3, y: 2)
+                                .accessibilityLabel("Screenshot \(index + 1)")
 
                             HStack(spacing: 2) {
                                 Image(systemName: "iphone")
@@ -218,7 +238,6 @@ struct ExportView: View {
                         }
                     }
 
-                    // iPad images
                     if appState.generateIPad {
                         ForEach(Array(appState.iPadComposedImages.enumerated()), id: \.offset) { index, image in
                             VStack(spacing: 4) {
@@ -228,6 +247,7 @@ struct ExportView: View {
                                     .frame(height: 160)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                     .shadow(color: .black.opacity(0.1), radius: 3, y: 2)
+                                    .accessibilityLabel("Screenshot \(index + 1)")
 
                                 HStack(spacing: 2) {
                                     Image(systemName: "ipad")
@@ -239,7 +259,6 @@ struct ExportView: View {
                             }
                         }
                     }
-                    #endif
                 }
                 .padding(.vertical, 4)
             }
@@ -250,8 +269,18 @@ struct ExportView: View {
 
     private var sizeSelection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Device Sizes")
-                .font(.headline)
+            HStack {
+                Text("Device Sizes")
+                    .font(.headline)
+
+                Spacer()
+
+                Button("Select Recommended") {
+                    appState.selectedSizes = Set(DeviceSize.recommendedSizes.map(\.id))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
 
             Text("Select which sizes to export. Required sizes are recommended for App Store submission.")
                 .font(.caption)
@@ -330,6 +359,7 @@ struct ExportView: View {
         return HStack {
             Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                 .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                .accessibilityValue(isSelected ? "Selected" : "Not selected")
                 .onTapGesture {
                     if isSelected {
                         appState.selectedSizes.remove(size.id)
@@ -358,7 +388,6 @@ struct ExportView: View {
 
             Spacer()
 
-            #if canImport(AppKit)
             let fileCount = size.deviceType == .iPad
                 ? appState.iPadComposedImages.count
                 : appState.composedImages.count
@@ -371,7 +400,6 @@ struct ExportView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
-            #endif
         }
         .padding(8)
         .background(
@@ -421,14 +449,21 @@ struct ExportView: View {
                     VStack(alignment: .leading) {
                         Text("Quality: \(Int(appState.exportConfig.jpegQuality * 100))%")
                             .font(.caption)
-                        Slider(value: $appState.exportConfig.jpegQuality, in: 0.5...1.0, step: 0.05)
-                            .frame(width: 150)
+                        HStack {
+                            Text("Low")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Slider(value: $appState.exportConfig.jpegQuality, in: 0.5...1.0, step: 0.05)
+                                .frame(width: 150)
+                            Text("High")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }
 
             // File count estimate
-            #if canImport(AppKit)
             let iPhoneSizeCount = availableSizes.filter { $0.deviceType == .iPhone && appState.selectedSizes.contains($0.id) }.count
             let iPadSizeCount = availableSizes.filter { $0.deviceType == .iPad && appState.selectedSizes.contains($0.id) }.count
             let iPhoneFiles = appState.composedImages.count * iPhoneSizeCount
@@ -443,7 +478,6 @@ struct ExportView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            #endif
         }
     }
 
@@ -570,7 +604,6 @@ struct ExportView: View {
 
             Spacer()
 
-            #if canImport(AppKit)
             if !appState.exportResults.isEmpty {
                 Button("Show in Finder") {
                     if let first = appState.exportResults.first {
@@ -579,7 +612,16 @@ struct ExportView: View {
                 }
                 .buttonStyle(.bordered)
             }
-            #endif
+
+            if appState.isLoading {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Exporting...")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
 
             Button("Export All") {
                 startExport()
@@ -597,7 +639,6 @@ struct ExportView: View {
     // MARK: - Actions
 
     private func startExport() {
-        #if canImport(AppKit)
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -609,19 +650,7 @@ struct ExportView: View {
             exportStartTime = Date()
             exportDuration = nil
             appState.exportAll(to: url)
-
-            // Monitor for export completion
-            Task {
-                // Poll until export finishes
-                while appState.isLoading {
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                }
-                if let start = exportStartTime {
-                    exportDuration = Date().timeIntervalSince(start)
-                }
-            }
         }
-        #endif
     }
 
     private func formatFileSize(_ bytes: Int) -> String {

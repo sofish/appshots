@@ -8,6 +8,7 @@ actor BackgroundGenerator {
         var baseURL: String = ""
         var apiKey: String = ""
         var model: String = ""
+        var timeoutInterval: TimeInterval = 120
     }
 
     enum GeneratorError: LocalizedError {
@@ -159,7 +160,7 @@ actor BackgroundGenerator {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(config.apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        request.timeoutInterval = 120
+        request.timeoutInterval = config.timeoutInterval
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -242,7 +243,8 @@ actor BackgroundGenerator {
         }
 
         let preview = String(data: responseData.prefix(500), encoding: .utf8) ?? ""
-        throw GeneratorError.generationFailed("No image data found in response. Preview: \(preview)")
+        let topLevelKeys = (dict as NSDictionary).allKeys.map { "\($0)" }.joined(separator: ", ")
+        throw GeneratorError.generationFailed("No image data found. Response keys: [\(topLevelKeys)]. Preview: \(preview)")
     }
 
     /// Extract image data from a multimodal content part.

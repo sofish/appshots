@@ -1,14 +1,13 @@
 import Foundation
-#if canImport(AppKit)
 import AppKit
-#endif
 import SwiftUI
+import Observation
 
 /// Central state management for the AppShots pipeline.
 /// Drives the UI through the 6-step workflow:
 /// 1 Markdown -> 2 Screenshots -> 3 Preview Plan -> 4 Generate Backgrounds -> 5 Compose -> 6 Export
 @MainActor
-final class AppState: ObservableObject {
+@Observable final class AppState {
 
     // MARK: - Workflow Step
 
@@ -58,52 +57,46 @@ final class AppState: ObservableObject {
 
     // MARK: - Published State
 
-    @Published var currentStep: Step = .markdown
-    @Published var markdownText: String = ""
-    @Published var descriptor: AppDescriptor = .empty
-    @Published var screenshots: [ScreenshotItem] = []
-    @Published var screenPlan: ScreenPlan = .empty
-    @Published var imagePrompts: [ImagePrompt] = []
-    @Published var backgroundImages: [Int: Data] = [:]
-    #if canImport(AppKit)
-    @Published var composedImages: [NSImage] = []
-    #endif
-    @Published var exportConfig: ExportConfig = .default
-    @Published var selectedSizes: Set<String> = Set(DeviceSize.defaultSizes.map(\.id))
+    var currentStep: Step = .markdown
+    var markdownText: String = ""
+    var descriptor: AppDescriptor = .empty
+    var screenshots: [ScreenshotItem] = []
+    var screenPlan: ScreenPlan = .empty
+    var imagePrompts: [ImagePrompt] = []
+    var backgroundImages: [Int: Data] = [:]
+    var composedImages: [NSImage] = []
+    var exportConfig: ExportConfig = .default
+    var selectedSizes: Set<String> = Set(DeviceSize.defaultSizes.map(\.id))
 
     // iPad state
-    @Published var generateIPad: Bool = false
-    @Published var iPadBackgroundImages: [Int: Data] = [:]
-    #if canImport(AppKit)
-    @Published var iPadComposedImages: [NSImage] = []
-    #endif
+    var generateIPad: Bool = false
+    var iPadBackgroundImages: [Int: Data] = [:]
+    var iPadComposedImages: [NSImage] = []
 
     // UI State
-    @Published var isLoading = false
-    @Published var loadingMessage = ""
-    @Published var errorMessage: String?
-    @Published var showError = false
-    @Published var generationProgress: Double = 0
-    #if canImport(AppKit)
-    @Published var exportResults: [Exporter.ExportResult] = []
-    #endif
+    var isLoading = false
+    var loadingMessage = ""
+    var errorMessage: String?
+    var showError = false
+    var generationProgress: Double = 0
+    var exportResults: [Exporter.ExportResult] = []
 
     // MARK: - Retry State
 
-    @Published var retryCount: Int = 0
+    var retryCount: Int = 0
     let maxRetries: Int = 3
 
     // MARK: - Computed Properties
 
     /// Whether the user can export: at least one composed image AND at least one size selected
     var canExport: Bool {
-        #if canImport(AppKit)
         let hasImages = !composedImages.isEmpty || !iPadComposedImages.isEmpty
-        #else
-        let hasImages = false
-        #endif
         let hasSizes = !selectedSizes.isEmpty
         return hasImages && hasSizes
+    }
+
+    var hasUnsavedChanges: Bool {
+        !markdownText.isEmpty || !screenshots.isEmpty || !screenPlan.screens.isEmpty
     }
 
     // MARK: - Services
@@ -113,10 +106,12 @@ final class AppState: ObservableObject {
     private let planGenerator: PlanGenerator
     private let promptTranslator: PromptTranslator
     private let backgroundGenerator: BackgroundGenerator
-    #if canImport(AppKit)
     private let compositor = Compositor()
     private let exporter = Exporter()
-    #endif
+
+    // MARK: - Generation Task
+
+    private var generationTask: Task<Void, Never>?
 
     // MARK: - Settings (persisted)
 
@@ -139,15 +134,18 @@ final class AppState: ObservableObject {
     // MARK: - Update service configs from @AppStorage
 
     func syncServiceConfigs() async {
+        let trimmedLLMURL = llmBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedGeminiURL = geminiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+
         let llmConfig = LLMService.Configuration(
-            baseURL: llmBaseURL,
+            baseURL: trimmedLLMURL,
             apiKey: llmAPIKey,
             model: llmModel
         )
         await llmService.updateConfig(llmConfig)
 
         let geminiConfig = BackgroundGenerator.Configuration(
-            baseURL: geminiBaseURL,
+            baseURL: trimmedGeminiURL,
             apiKey: geminiAPIKey,
             model: geminiModel
         )
@@ -248,12 +246,6 @@ final class AppState: ObservableObject {
             return
         }
 
-        // Validate screenshots have at least 1 item (redundant with above, but explicit)
-        guard screenshots.count >= 1 else {
-            showError("Please add at least one screenshot.")
-            return
-        }
-
         currentStep = .planPreview
         generatePlan()
     }
@@ -286,135 +278,138 @@ final class AppState: ObservableObject {
     func startGeneration() {
         currentStep = .generating
         retryCount = 0
-        performGeneration()
+        generationTask = Task { await performGeneration() }
+    }
+
+    func cancelGeneration() {
+        generationTask?.cancel()
+        generationTask = nil
+        isLoading = false
+        loadingMessage = "Generation cancelled."
     }
 
     /// Internal generation logic, supports automatic retry on total failure
-    private func performGeneration() {
-        Task {
-            isLoading = true
-            loadingMessage = "Building image prompts..."
-            await syncServiceConfigs()
+    private func performGeneration() async {
+        isLoading = true
+        loadingMessage = "Building image prompts..."
+        await syncServiceConfigs()
 
+        do {
+            // Step A: Build prompts from plan data (no LLM call)
+            imagePrompts = promptTranslator.translate(plan: screenPlan)
+
+            // Build iPad prompts if iPad generation is enabled
+            var iPadPrompts: [ImagePrompt] = []
+            if generateIPad {
+                iPadPrompts = promptTranslator.translateIPad(plan: screenPlan)
+            }
+
+            // Step B: Build screenshot data map (screenIndex -> screenshot data)
+            var screenshotDataMap: [Int: Data] = [:]
+            for screen in screenPlan.screens {
+                if screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count {
+                    let ssData = screenshots[screen.screenshotMatch].imageData
+                    screenshotDataMap[screen.index] = ssData
+                    // iPad prompts use offset indices (index + 1000)
+                    if generateIPad {
+                        screenshotDataMap[screen.index + 1000] = ssData
+                    }
+                }
+            }
+
+            // Step C: Generate all compositions in parallel (iPhone + iPad simultaneously)
+            let allPrompts = imagePrompts + iPadPrompts
+            let total = Double(allPrompts.count)
+            let iPhoneCount = imagePrompts.count
+            let iPadCount = iPadPrompts.count
+
+            if generateIPad {
+                loadingMessage = "Generating \(iPhoneCount) iPhone + \(iPadCount) iPad screenshots..."
+            } else {
+                loadingMessage = "Generating screenshots..."
+            }
+            generationProgress = 0
+
+            // Generate all images. The onProgress callback routes results incrementally,
+            // so even if the TaskGroup throws (one image fails), we keep partial results.
+            var generationError: Error?
             do {
-                // Step A: Build prompts from plan data (no LLM call)
-                imagePrompts = promptTranslator.translate(plan: screenPlan)
-
-                // Build iPad prompts if iPad generation is enabled
-                var iPadPrompts: [ImagePrompt] = []
-                if generateIPad {
-                    iPadPrompts = promptTranslator.translateIPad(plan: screenPlan)
-                }
-
-                // Step B: Build screenshot data map (screenIndex -> screenshot data)
-                var screenshotDataMap: [Int: Data] = [:]
-                for screen in screenPlan.screens {
-                    if screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count {
-                        let ssData = screenshots[screen.screenshotMatch].imageData
-                        screenshotDataMap[screen.index] = ssData
-                        // iPad prompts use offset indices (index + 1000)
-                        if generateIPad {
-                            screenshotDataMap[screen.index + 1000] = ssData
-                        }
-                    }
-                }
-
-                // Step C: Generate all compositions in parallel (iPhone + iPad simultaneously)
-                let allPrompts = imagePrompts + iPadPrompts
-                let total = Double(allPrompts.count)
-                let iPhoneCount = imagePrompts.count
-                let iPadCount = iPadPrompts.count
-
-                if generateIPad {
-                    loadingMessage = "Generating \(iPhoneCount) iPhone + \(iPadCount) iPad screenshots..."
-                } else {
-                    loadingMessage = "Generating screenshots..."
-                }
-                generationProgress = 0
-
-                // Generate all images. The onProgress callback routes results incrementally,
-                // so even if the TaskGroup throws (one image fails), we keep partial results.
-                var generationError: Error?
-                do {
-                    let allResults = try await backgroundGenerator.generateAll(
-                        prompts: allPrompts,
-                        screenshotDataMap: screenshotDataMap
-                    ) { [weak self] index, data in
-                        Task { @MainActor in
-                            if index >= 1000 {
-                                self?.iPadBackgroundImages[index - 1000] = data
-                            } else {
-                                self?.backgroundImages[index] = data
-                            }
-
-                            let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
-                            self?.generationProgress = Double(completed) / total
-                            self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
-                        }
-                    }
-
-                    // Route final results
-                    for (index, data) in allResults {
-                        if index >= 1000 {
-                            iPadBackgroundImages[index - 1000] = data
-                        } else {
-                            backgroundImages[index] = data
-                        }
-                    }
-                } catch {
-                    generationError = error
-                }
-
-                // Step D: Build composed images from whatever we got (partial or full)
-                #if canImport(AppKit)
-                composedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
-                    guard let data = backgroundImages[screen.index] else { return nil }
-                    return NSImage(data: data)
-                }
-
-                if generateIPad {
-                    iPadComposedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
-                        guard let data = iPadBackgroundImages[screen.index] else { return nil }
-                        return NSImage(data: data)
-                    }
-                }
-                #endif
-
-                isLoading = false
-
-                // Auto-advance to export with a short delay for smoother transition
-                if !backgroundImages.isEmpty {
+                let allResults = try await backgroundGenerator.generateAll(
+                    prompts: allPrompts,
+                    screenshotDataMap: screenshotDataMap
+                ) { [weak self] index, data in
                     Task { @MainActor in
-                        try? await Task.sleep(nanoseconds: 500_000_000)
-                        if !self.backgroundImages.isEmpty {
-                            self.currentStep = .export
+                        if index >= 1000 {
+                            self?.iPadBackgroundImages[index - 1000] = data
+                        } else {
+                            self?.backgroundImages[index] = data
                         }
+
+                        let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
+                        self?.generationProgress = Double(completed) / total
+                        self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
                     }
                 }
 
-                // Report error for failed images, with auto-retry for total failure
-                if let error = generationError {
-                    let successCount = backgroundImages.count + iPadBackgroundImages.count
-                    if successCount > 0 {
-                        showError("Some images failed to generate (\(successCount)/\(Int(total)) succeeded): \(error.localizedDescription)")
+                // Route final results
+                for (index, data) in allResults {
+                    if index >= 1000 {
+                        iPadBackgroundImages[index - 1000] = data
                     } else {
-                        // Total failure: auto-retry once with delay
-                        if retryCount < 1 {
-                            retryCount += 1
-                            loadingMessage = "All images failed. Retrying in 2 seconds (attempt \(retryCount + 1))..."
-                            isLoading = true
-                            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-                            performGeneration()
-                            return
-                        } else {
-                            showError(error.localizedDescription)
-                        }
+                        backgroundImages[index] = data
                     }
                 }
             } catch {
-                isLoading = false
-                showError(error.localizedDescription)
+                generationError = error
             }
+
+            // Step D: Build composed images from whatever we got (partial or full)
+            composedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
+                guard let data = backgroundImages[screen.index] else { return nil }
+                return NSImage(data: data)
+            }
+
+            if generateIPad {
+                iPadComposedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
+                    guard let data = iPadBackgroundImages[screen.index] else { return nil }
+                    return NSImage(data: data)
+                }
+            }
+
+            isLoading = false
+
+            // Auto-advance to export with a short delay for smoother transition
+            if !backgroundImages.isEmpty {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if !self.backgroundImages.isEmpty {
+                        self.currentStep = .export
+                    }
+                }
+            }
+
+            // Report error for failed images, with auto-retry for total failure
+            if let error = generationError {
+                let successCount = backgroundImages.count + iPadBackgroundImages.count
+                if successCount > 0 {
+                    showError("Some images failed to generate (\(successCount)/\(Int(total)) succeeded): \(error.localizedDescription)")
+                } else {
+                    // Total failure: auto-retry once with delay
+                    if retryCount < 1 {
+                        retryCount += 1
+                        loadingMessage = "All images failed. Retrying in 2 seconds (attempt \(retryCount + 1))..."
+                        isLoading = true
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                        await performGeneration()
+                        return
+                    } else {
+                        showError(error.localizedDescription)
+                    }
+                }
+            }
+        } catch {
+            isLoading = false
+            showError(error.localizedDescription)
         }
     }
 
@@ -424,17 +419,14 @@ final class AppState: ObservableObject {
     func resetGeneration() {
         backgroundImages = [:]
         iPadBackgroundImages = [:]
-        #if canImport(AppKit)
         composedImages = []
         iPadComposedImages = []
-        #endif
         generationProgress = 0
         retryCount = 0
     }
 
     // MARK: - Step 5: Compose (Core Graphics, no LLM)
 
-    #if canImport(AppKit)
     func composeAll(deviceType: DeviceType = .iPhone) {
         Task {
             isLoading = true
@@ -555,11 +547,9 @@ final class AppState: ObservableObject {
             }
         }
     }
-    #endif
 
     // MARK: - Recompose Single Screen
 
-    #if canImport(AppKit)
     func recomposeSingle(screenIndex: Int, deviceType: DeviceType = .iPhone) {
         guard screenIndex < screenPlan.screens.count else { return }
         let screen = screenPlan.screens[screenIndex]
@@ -602,7 +592,6 @@ final class AppState: ObservableObject {
             showError("Recompose failed: \(error.localizedDescription)")
         }
     }
-    #endif
 
     // MARK: - Regenerate single screenshot
 
@@ -625,11 +614,9 @@ final class AppState: ObservableObject {
             do {
                 let data = try await backgroundGenerator.generateSingle(prompt: prompt, screenshotData: screenshotData)
                 backgroundImages[screen.index] = data
-                #if canImport(AppKit)
                 if let image = NSImage(data: data), screenIndex < composedImages.count {
                     composedImages[screenIndex] = image
                 }
-                #endif
             } catch {
                 showError(error.localizedDescription)
             }
@@ -639,7 +626,47 @@ final class AppState: ObservableObject {
     // MARK: - Navigation
 
     func goToStep(_ step: Step) {
+        guard step.rawValue <= currentStep.rawValue || canAdvanceToStep(step) else { return }
         currentStep = step
+        saveProgress()
+    }
+
+    private func canAdvanceToStep(_ step: Step) -> Bool {
+        for i in currentStep.rawValue..<step.rawValue {
+            guard let s = Step(rawValue: i) else { return false }
+            if !canAdvance(from: s) { return false }
+        }
+        return true
+    }
+
+    func resetToStep(_ step: Step) {
+        currentStep = step
+        switch step {
+        case .markdown:
+            screenshots.removeAll()
+            screenPlan = .empty
+            backgroundImages.removeAll()
+            iPadBackgroundImages.removeAll()
+            composedImages.removeAll()
+            iPadComposedImages.removeAll()
+        case .screenshots:
+            screenPlan = .empty
+            backgroundImages.removeAll()
+            iPadBackgroundImages.removeAll()
+            composedImages.removeAll()
+            iPadComposedImages.removeAll()
+        case .planPreview:
+            backgroundImages.removeAll()
+            iPadBackgroundImages.removeAll()
+            composedImages.removeAll()
+            iPadComposedImages.removeAll()
+        case .generating:
+            composedImages.removeAll()
+            iPadComposedImages.removeAll()
+        default:
+            break
+        }
+        saveProgress()
     }
 
     func canAdvance(from step: Step) -> Bool {
@@ -647,18 +674,13 @@ final class AppState: ObservableObject {
         case .markdown:
             return !markdownText.isEmpty && descriptor.name.count > 0
         case .screenshots:
-            return !screenshots.isEmpty && screenshots.count <= 10
+            return !screenshots.isEmpty
         case .planPreview:
             return !screenPlan.screens.isEmpty && !isLoading
         case .generating:
             return !backgroundImages.isEmpty && !isLoading
-        #if canImport(AppKit)
         case .composing:
             return !composedImages.isEmpty
-        #else
-        case .composing:
-            return false
-        #endif
         case .export:
             return true
         }
@@ -676,23 +698,20 @@ final class AppState: ObservableObject {
         case .generating:
             return backgroundImages.isEmpty ? nil : "\(backgroundImages.count) generated"
         case .composing:
-            #if canImport(AppKit)
             return composedImages.isEmpty ? nil : "\(composedImages.count) composed"
-            #else
-            return nil
-            #endif
         case .export:
-            #if canImport(AppKit)
             return exportResults.isEmpty ? nil : "\(exportResults.count) exported"
-            #else
-            return nil
-            #endif
         }
     }
 
     // MARK: - Error Handling
 
     private func showError(_ message: String) {
+        errorMessage = message
+        showError = true
+    }
+
+    func showErrorWithMessage(_ message: String) {
         errorMessage = message
         showError = true
     }
@@ -710,11 +729,9 @@ struct ScreenshotItem: Identifiable, Equatable {
     let imageData: Data
     let fileName: String
 
-    #if canImport(AppKit)
     var nsImage: NSImage {
         NSImage(data: imageData) ?? NSImage()
     }
-    #endif
 
     init(id: UUID = UUID(), imageData: Data, fileName: String = "screenshot.png") {
         self.id = id

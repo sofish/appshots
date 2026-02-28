@@ -1,14 +1,13 @@
 import SwiftUI
-import Combine
 
 /// Step 4: Background generation progress view.
 /// Shows progress as Gemini generates backgrounds in parallel.
 struct GeneratingView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var elapsedSeconds: Int = 0
-    @State private var timerCancellable: AnyCancellable?
     @State private var currentTipIndex: Int = 0
-    @State private var tipTimerCancellable: AnyCancellable?
+    @State private var progressStallSeconds: Int = 0
+    @State private var lastProgress: Double = 0
 
     private let tips: [String] = [
         "Generation usually takes 10-30 seconds per screenshot",
@@ -40,47 +39,31 @@ struct GeneratingView: View {
             Divider()
             footer
         }
-        .onAppear {
-            startTimers()
-        }
-        .onDisappear {
-            stopTimers()
-        }
-        .onChange(of: appState.isLoading) { _, isLoading in
-            if !isLoading {
-                stopTimers()
-            }
-        }
-    }
-
-    private func startTimers() {
-        elapsedSeconds = 0
-        currentTipIndex = 0
-
-        // Elapsed time timer (every 1 second)
-        timerCancellable = Timer.publish(every: 1, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                if appState.isLoading {
-                    elapsedSeconds += 1
+        .task(id: appState.isLoading) {
+            guard appState.isLoading else { return }
+            elapsedSeconds = 0
+            currentTipIndex = 0
+            progressStallSeconds = 0
+            lastProgress = appState.generationProgress
+            while !Task.isCancelled && appState.isLoading {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { break }
+                elapsedSeconds += 1
+                // Track how long progress has been stalled
+                let currentProgress = appState.generationProgress
+                if abs(currentProgress - lastProgress) < 0.001 {
+                    progressStallSeconds += 1
+                } else {
+                    progressStallSeconds = 0
+                    lastProgress = currentProgress
+                }
+                if elapsedSeconds % 5 == 0 {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        currentTipIndex = (currentTipIndex + 1) % tips.count
+                    }
                 }
             }
-
-        // Tip rotation timer (every 5 seconds)
-        tipTimerCancellable = Timer.publish(every: 5, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    currentTipIndex = (currentTipIndex + 1) % tips.count
-                }
-            }
-    }
-
-    private func stopTimers() {
-        timerCancellable?.cancel()
-        timerCancellable = nil
-        tipTimerCancellable?.cancel()
-        tipTimerCancellable = nil
+        }
     }
 
     // MARK: - Progress Content
@@ -102,6 +85,13 @@ struct GeneratingView: View {
                         .frame(width: 120, height: 120)
                         .rotationEffect(.degrees(-90))
                         .animation(.easeInOut(duration: 0.5), value: appState.generationProgress)
+                        .opacity(progressStallSeconds > 3 ? 0.6 : 1.0)
+                        .animation(
+                            progressStallSeconds > 3
+                                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                                : .default,
+                            value: progressStallSeconds > 3
+                        )
 
                     VStack(spacing: 2) {
                         Text("\(Int(appState.generationProgress * 100))%")
@@ -111,6 +101,7 @@ struct GeneratingView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityLabel("Generation progress: \(Int(appState.generationProgress * 100)) percent")
 
                 Text(appState.loadingMessage)
                     .font(.callout)
@@ -159,6 +150,7 @@ struct GeneratingView: View {
                             .foregroundStyle(.secondary)
                             .id(currentTipIndex)
                             .transition(.opacity)
+                            .contentTransition(.numericText())
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -201,7 +193,6 @@ struct GeneratingView: View {
                 } else if appState.isLoading {
                     VStack(spacing: 4) {
                         // Show miniature screenshot thumbnail
-                        #if canImport(AppKit)
                         if let item = screenshotItem {
                             Image(nsImage: item.nsImage)
                                 .resizable()
@@ -216,9 +207,6 @@ struct GeneratingView: View {
                         } else {
                             ProgressView()
                         }
-                        #else
-                        ProgressView()
-                        #endif
                         if appState.generateIPad {
                             HStack(spacing: 4) {
                                 Image(systemName: "iphone")
@@ -241,6 +229,7 @@ struct GeneratingView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+        .accessibilityLabel("Screen \(screen.index + 1): \(allComplete ? "Complete" : "In progress")")
     }
 
     // MARK: - Footer
@@ -253,6 +242,16 @@ struct GeneratingView: View {
             .buttonStyle(.bordered)
 
             Spacer()
+
+            if appState.isLoading {
+                Button("Cancel Generation") {
+                    // Reset loading state
+                    appState.isLoading = false
+                }
+                .buttonStyle(.bordered)
+                .foregroundStyle(.red)
+                .help("Stop generating screenshots")
+            }
 
             // Allow advancing when generation is done or has partial results
             if !appState.isLoading && !appState.backgroundImages.isEmpty {

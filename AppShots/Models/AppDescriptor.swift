@@ -98,4 +98,14 @@ struct AppDescriptor: Codable, Equatable {
     var isComplete: Bool {
         !name.isEmpty && !tagline.isEmpty && !features.isEmpty && !corePitch.isEmpty
     }
+
+    /// One-line summary of the first few features.
+    var featuresSummary: String {
+        features.prefix(3).map(\.name).joined(separator: ", ") + (features.count > 3 ? " +\(features.count - 3) more" : "")
+    }
+
+    /// Returns true if the descriptor has the minimum content needed to proceed.
+    var hasMinimumContent: Bool {
+        !name.isEmpty && !features.isEmpty && !corePitch.isEmpty
+    }
 }

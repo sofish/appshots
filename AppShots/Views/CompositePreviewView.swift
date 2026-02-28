@@ -4,12 +4,13 @@ import SwiftUI
 /// Shows the final composited images and allows quick adjustments.
 /// Adjustments that don't need re-generation (text, layout, colors) are instant.
 struct CompositePreviewView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var selectedScreenIndex: Int = 0
     @State private var showAdjustments = false
     @State private var previewDeviceType: DeviceType = .iPhone
     @State private var zoomLevel: Double = 100.0
     @State private var showGridOverlay: Bool = false
+    @State private var eventMonitor: Any?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +28,7 @@ struct CompositePreviewView: View {
         }
         .onAppear {
             // Set up keyboard monitoring for zoom
-            NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if event.modifierFlags.contains(.command) {
                     if event.charactersIgnoringModifiers == "=" || event.charactersIgnoringModifiers == "+" {
                         zoomIn()
@@ -37,7 +38,24 @@ struct CompositePreviewView: View {
                         return nil
                     }
                 }
+                if event.keyCode == 123 { // Left arrow
+                    if selectedScreenIndex > 0 {
+                        selectedScreenIndex -= 1
+                    }
+                    return nil
+                } else if event.keyCode == 124 { // Right arrow
+                    if selectedScreenIndex < currentImages.count - 1 {
+                        selectedScreenIndex += 1
+                    }
+                    return nil
+                }
                 return event
+            }
+        }
+        .onDisappear {
+            if let monitor = eventMonitor {
+                NSEvent.removeMonitor(monitor)
+                eventMonitor = nil
             }
         }
     }
@@ -52,7 +70,6 @@ struct CompositePreviewView: View {
 
     private func fitToWindow() {
         // Calculate ideal zoom to fit a 600pt tall area
-        #if canImport(AppKit)
         if selectedScreenIndex < currentImages.count {
             let image = currentImages[selectedScreenIndex]
             let imageHeight = image.size.height
@@ -62,14 +79,12 @@ struct CompositePreviewView: View {
                 zoomLevel = min(200, max(50, idealZoom))
             }
         }
-        #endif
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack {
-            #if canImport(AppKit)
             // Image dimensions display
             if selectedScreenIndex < currentImages.count {
                 let image = currentImages[selectedScreenIndex]
@@ -82,7 +97,6 @@ struct CompositePreviewView: View {
                         .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
                 }
             }
-            #endif
 
             Spacer()
 
@@ -132,7 +146,6 @@ struct CompositePreviewView: View {
 
             Divider().frame(height: 20)
 
-            #if canImport(AppKit)
             if appState.generateIPad && !appState.iPadComposedImages.isEmpty {
                 Picker("Device", selection: $previewDeviceType) {
                     Text("iPhone").tag(DeviceType.iPhone)
@@ -151,11 +164,10 @@ struct CompositePreviewView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(.quaternary))
-            #endif
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
     // MARK: - Loading
@@ -185,18 +197,15 @@ struct CompositePreviewView: View {
         .padding(.horizontal, 20)
     }
 
-    #if canImport(AppKit)
     /// Images for the currently selected device type.
     private var currentImages: [NSImage] {
         previewDeviceType == .iPad ? appState.iPadComposedImages : appState.composedImages
     }
-    #endif
 
     // MARK: - Main Preview
 
     private var mainPreview: some View {
         VStack {
-            #if canImport(AppKit)
             if selectedScreenIndex < currentImages.count {
                 let image = currentImages[selectedScreenIndex]
                 let scaleFactor = zoomLevel / 100.0
@@ -208,6 +217,7 @@ struct CompositePreviewView: View {
                             .frame(maxHeight: 600 * scaleFactor)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
 
                         // Grid overlay for App Store safe areas
                         if showGridOverlay {
@@ -253,6 +263,35 @@ struct CompositePreviewView: View {
                     }
                 }
                 .padding()
+
+                // Previous / Next navigation bar
+                HStack {
+                    Button {
+                        if selectedScreenIndex > 0 { selectedScreenIndex -= 1 }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedScreenIndex <= 0)
+
+                    Spacer()
+
+                    Text("Screen \(selectedScreenIndex + 1) of \(currentImages.count)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Button {
+                        if selectedScreenIndex < currentImages.count - 1 { selectedScreenIndex += 1 }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedScreenIndex >= currentImages.count - 1)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
             } else if currentImages.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: previewDeviceType == .iPad ? "ipad" : "iphone")
@@ -287,7 +326,6 @@ struct CompositePreviewView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            #endif
         }
     }
 
@@ -305,11 +343,9 @@ struct CompositePreviewView: View {
 
             ScrollView {
                 VStack(spacing: 8) {
-                    #if canImport(AppKit)
                     ForEach(Array(currentImages.enumerated()), id: \.offset) { index, image in
                         thumbnailCard(image: image, index: index)
                     }
-                    #endif
                 }
                 .padding(8)
             }
@@ -321,10 +357,9 @@ struct CompositePreviewView: View {
                 quickAdjustments
             }
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
-    #if canImport(AppKit)
     private func thumbnailCard(image: NSImage, index: Int) -> some View {
         let isSelected = selectedScreenIndex == index
         return Button {
@@ -341,7 +376,12 @@ struct CompositePreviewView: View {
                             .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
                     )
 
-                HStack {
+                HStack(spacing: 4) {
+                    if isSelected {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 6, height: 6)
+                    }
                     if index == 0 {
                         Text("HERO")
                             .font(.caption2.bold())
@@ -351,15 +391,24 @@ struct CompositePreviewView: View {
                         .font(.caption)
                         .foregroundStyle(isSelected ? .primary : .secondary)
                 }
+
+                if index < appState.screenPlan.screens.count {
+                    let screenConfig = appState.screenPlan.screens[index]
+                    Text(screenConfig.heading)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
         .buttonStyle(.plain)
     }
-    #endif
 
     // MARK: - Quick Adjustments
 
     private var quickAdjustments: some View {
+        @Bindable var appState = appState
+
         let screenBinding = Binding<ScreenConfig>(
             get: {
                 guard selectedScreenIndex < appState.screenPlan.screens.count else {
@@ -407,9 +456,7 @@ struct CompositePreviewView: View {
 
             // Recompose button (instant, no LLM)
             Button("Recompose") {
-                #if canImport(AppKit)
                 appState.recomposeSingle(screenIndex: selectedScreenIndex, deviceType: previewDeviceType)
-                #endif
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
@@ -439,9 +486,7 @@ struct CompositePreviewView: View {
             Spacer()
 
             Button("Recompose All") {
-                #if canImport(AppKit)
                 appState.composeAll(deviceType: previewDeviceType)
-                #endif
             }
             .buttonStyle(.bordered)
 

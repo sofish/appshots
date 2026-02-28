@@ -3,11 +3,13 @@ import SwiftUI
 /// Settings view for configuring API endpoints.
 /// Accessible from the app menu or sidebar settings button.
 struct SettingsView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var llmTestResult: TestResult?
     @State private var geminiTestResult: TestResult?
     @State private var isTesting = false
     @State private var copyConfirmation = false
+    @State private var lastLLMTestTime: Date?
+    @State private var lastGeminiTestTime: Date?
 
     enum TestResult {
         case success(String)
@@ -64,7 +66,8 @@ struct SettingsView: View {
     // MARK: - API Settings
 
     private var apiSettings: some View {
-        Form {
+        @Bindable var appState = appState
+        return Form {
             Section {
                 TextField("https://api.anthropic.com", text: $appState.llmBaseURL)
                     .textFieldStyle(.roundedBorder)
@@ -164,10 +167,20 @@ struct SettingsView: View {
 
                 if let result = llmTestResult {
                     testResultView("LLM", result: result)
+                    if let time = lastLLMTestTime {
+                        Text("Last tested: \(time, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 if let result = geminiTestResult {
                     testResultView("Image Gen", result: result)
+                    if let time = lastGeminiTestTime {
+                        Text("Last tested: \(time, style: .relative) ago")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
 
                 // Copy Configuration button
@@ -180,6 +193,16 @@ struct SettingsView: View {
                             copyConfirmation ? "Copied!" : "Copy Configuration",
                             systemImage: copyConfirmation ? "checkmark" : "doc.on.doc"
                         )
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button("Reset to Defaults") {
+                        appState.llmBaseURL = "https://api.anthropic.com"
+                        appState.llmModel = "claude-sonnet-4-20250514"
+                        appState.geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+                        appState.geminiModel = "gemini-2.0-flash-preview-image-generation"
+                        // Don't reset API keys
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -225,10 +248,8 @@ struct SettingsView: View {
 
         if let jsonData = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]),
            let jsonString = String(data: jsonData, encoding: .utf8) {
-            #if canImport(AppKit)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(jsonString, forType: .string)
-            #endif
             copyConfirmation = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 copyConfirmation = false
@@ -259,6 +280,10 @@ struct SettingsView: View {
 
             Divider()
                 .frame(width: 200)
+
+            Text("Version 1.0")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
 
             VStack(spacing: 4) {
                 Text("Built with SwiftUI + Core Graphics")
@@ -309,6 +334,7 @@ struct SettingsView: View {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     llmTestResult = .success("Connected (HTTP \(http.statusCode))")
+                    lastLLMTestTime = Date()
                 } else if let http = response as? HTTPURLResponse {
                     var detail = "HTTP \(http.statusCode)"
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -364,6 +390,7 @@ struct SettingsView: View {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
                     geminiTestResult = .success("Connected (HTTP \(http.statusCode))")
+                    lastGeminiTestTime = Date()
                 } else if let http = response as? HTTPURLResponse {
                     var detail = "HTTP \(http.statusCode)"
                     if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

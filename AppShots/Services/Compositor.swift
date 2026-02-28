@@ -1,5 +1,4 @@
 import Foundation
-#if canImport(AppKit)
 import AppKit
 import CoreGraphics
 import CoreText
@@ -52,6 +51,10 @@ struct Compositor {
         ) else {
             throw CompositorError.contextCreationFailed
         }
+
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+        context.interpolationQuality = .high
 
         let canvasSize = CGSize(width: width, height: height)
         let layout: LayoutEngine.LayoutResult
@@ -114,6 +117,10 @@ struct Compositor {
         ) else {
             throw CompositorError.contextCreationFailed
         }
+
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+        context.interpolationQuality = .high
 
         let canvasSize = CGSize(width: width, height: height)
         let layout: LayoutEngine.LayoutResult
@@ -370,7 +377,8 @@ struct Compositor {
         }
 
         // 2. Draw screenshot inside the screen area (aspect-fill)
-        if screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) != nil {
+        let cgScreenshot = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        if cgScreenshot != nil {
             drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: screenRect,
                                  cornerRadius: screenCornerRadius)
         } else {
@@ -417,8 +425,8 @@ struct Compositor {
         let cornerRadius = deviceRect.width * 0.03
 
         // Drop shadow (increased blur for softer, more premium look)
-        context.setShadow(offset: CGSize(width: 0, height: -8), blur: 40,
-                          color: CGColor(gray: 0, alpha: 0.35))
+        context.setShadow(offset: CGSize(width: 0, height: -10), blur: 48,
+                          color: CGColor(gray: 0, alpha: 0.30))
 
         // Draw the screenshot directly with rounded corners
         drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: deviceRect,
@@ -602,6 +610,14 @@ struct Compositor {
         context.addPath(pillPath)
         context.fillPath()
 
+        // Subtle inner shadow for a more refined pill shape
+        let innerShadowRect = pillRect.insetBy(dx: 0.5, dy: 0.5)
+        let innerShadowPath = CGPath(roundedRect: innerShadowRect, cornerWidth: (pillHeight - 1) / 2, cornerHeight: (pillHeight - 1) / 2, transform: nil)
+        context.setStrokeColor(CGColor(gray: 0.15, alpha: 0.5))
+        context.setLineWidth(0.5)
+        context.addPath(innerShadowPath)
+        context.strokePath()
+
         // Subtle camera dot on the right side of the Dynamic Island pill
         let cameraDotSize: CGFloat = 4.0
         let cameraDotX = pillRect.maxX - pillHeight / 2  // Centered vertically within the right side
@@ -751,4 +767,3 @@ struct Compositor {
         return CGColor(red: r, green: g, blue: b, alpha: 1.0)
     }
 }
-#endif

@@ -154,14 +154,18 @@ struct PlanGenerator {
         do {
             return try decoder.decode(ScreenPlan.self, from: data)
         } catch {
-            let preview = String(jsonString.prefix(300))
-            throw LLMService.LLMError.decodingFailed("\(error.localizedDescription)\nResponse preview: \(preview)")
+            let extractedPreview = String(jsonString.prefix(300))
+            let rawPreview = String(response.prefix(300))
+            let detail = extractedPreview == rawPreview
+                ? "Response preview: \(extractedPreview)"
+                : "Extracted JSON preview: \(extractedPreview)\nRaw response preview: \(rawPreview)"
+            throw LLMService.LLMError.decodingFailed("\(error.localizedDescription)\n\(detail)")
         }
     }
 
     private func extractJSON(from text: String) -> String {
-        // Try to find JSON block in markdown code fence
-        if let startRange = text.range(of: "```json"),
+        // Try to find JSON block in markdown code fence (case-insensitive language tag)
+        if let startRange = text.range(of: "```json", options: .caseInsensitive),
            let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
             return String(text[startRange.upperBound..<endRange.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -170,8 +174,12 @@ struct PlanGenerator {
         // Try to find JSON block without language tag
         if let startRange = text.range(of: "```"),
            let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
-            return String(text[startRange.upperBound..<endRange.lowerBound])
+            let extracted = String(text[startRange.upperBound..<endRange.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only use if it looks like JSON (starts with { or [)
+            if extracted.hasPrefix("{") || extracted.hasPrefix("[") {
+                return extracted
+            }
         }
 
         // Try to find raw JSON object

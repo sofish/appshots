@@ -1,19 +1,18 @@
 import SwiftUI
-#if canImport(AppKit)
 import AppKit
 import UniformTypeIdentifiers
-#endif
 
 /// Step 2: Screenshot upload and management.
 /// Supports drag & drop, paste (Cmd+V), and file picker.
 /// Users can reorder screenshots and select export sizes.
 struct ScreenshotGalleryView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @State private var isDragOver = false
     @State private var draggingItemID: UUID?
     @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
+        @Bindable var appState = appState
         VStack(spacing: 0) {
             header
             Divider()
@@ -62,6 +61,18 @@ struct ScreenshotGalleryView: View {
 
     private var header: some View {
         HStack {
+            if appState.screenshots.count > 1 {
+                Button {
+                    withAnimation {
+                        appState.screenshots.sort { $0.fileName < $1.fileName }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
             Spacer()
 
             Text("\(appState.screenshots.count) screenshot\(appState.screenshots.count == 1 ? "" : "s")")
@@ -73,7 +84,7 @@ struct ScreenshotGalleryView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
     // MARK: - Main Content
@@ -186,7 +197,12 @@ struct ScreenshotGalleryView: View {
             .padding(.horizontal, 20)
             .padding(.vertical)
         }
+        .onPasteCommand(of: [UTType.image]) { providers in
+            handleDrop(providers)
+        }
     }
+
+    @State private var isAddMoreHovering = false
 
     private var addMoreCard: some View {
         Button {
@@ -198,11 +214,11 @@ struct ScreenshotGalleryView: View {
                 Text("Add More")
                     .font(.caption)
             }
-            .foregroundStyle(.secondary)
+            .foregroundStyle(isAddMoreHovering ? .primary : .secondary)
             .frame(width: 160, height: 280)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(.clear)
+                    .fill(isAddMoreHovering ? Color.accentColor.opacity(0.06) : .clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -212,9 +228,14 @@ struct ScreenshotGalleryView: View {
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.5
+                        lineWidth: isAddMoreHovering ? 2.0 : 1.5
                     )
             )
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isAddMoreHovering = hovering
+                }
+            }
         }
         .buttonStyle(.plain)
     }
@@ -279,10 +300,11 @@ struct ScreenshotGalleryView: View {
             Spacer()
 
             if !appState.screenshots.isEmpty {
-                Button("Clear All") {
-                    appState.screenshots.removeAll()
+                Button("Clear All", role: .destructive) {
+                    withAnimation {
+                        appState.screenshots.removeAll()
+                    }
                 }
-                .foregroundStyle(.red)
             }
 
             Button("Generate Plan") {
@@ -301,7 +323,6 @@ struct ScreenshotGalleryView: View {
     // MARK: - Actions
 
     private func openFilePicker() {
-        #if canImport(AppKit)
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = true
@@ -311,36 +332,40 @@ struct ScreenshotGalleryView: View {
             for url in panel.urls {
                 if let data = try? Data(contentsOf: url) {
                     let item = ScreenshotItem(imageData: data, fileName: url.lastPathComponent)
-                    appState.screenshots.append(item)
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        appState.screenshots.append(item)
+                    }
                 }
             }
         }
-        #endif
     }
 
     private func pasteFromClipboard() {
-        #if canImport(AppKit)
         let pasteboard = NSPasteboard.general
         if let data = pasteboard.data(forType: .png) {
             let item = ScreenshotItem(imageData: data, fileName: "pasted.png")
-            appState.screenshots.append(item)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                appState.screenshots.append(item)
+            }
         } else if let data = pasteboard.data(forType: .tiff),
                   let image = NSImage(data: data),
                   let tiffData = image.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
                   let png = bitmap.representation(using: .png, properties: [:]) {
             let item = ScreenshotItem(imageData: png, fileName: "pasted.png")
-            appState.screenshots.append(item)
+            withAnimation(.easeInOut(duration: 0.3)) {
+                appState.screenshots.append(item)
+            }
         }
-        #endif
     }
 
     private func handleDrop(_ providers: [NSItemProvider]) {
         for provider in providers {
             provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
-                if let data = data {
-                    DispatchQueue.main.async {
-                        let item = ScreenshotItem(imageData: data, fileName: "dropped.png")
+                guard let data = data else { return }
+                Task { @MainActor in
+                    let item = ScreenshotItem(imageData: data, fileName: "dropped.png")
+                    withAnimation(.easeInOut(duration: 0.3)) {
                         appState.screenshots.append(item)
                     }
                 }
@@ -383,20 +408,17 @@ struct ScreenshotReorderDelegate: DropDelegate {
 struct ScreenshotCard: View {
     let item: ScreenshotItem
     let index: Int
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
 
-    #if canImport(AppKit)
     private var imageDimensions: String {
         let img = item.nsImage
         guard let rep = img.representations.first else { return "" }
         return "\(rep.pixelsWide)\u{00D7}\(rep.pixelsHigh)"
     }
-    #endif
 
     var body: some View {
         VStack(spacing: 4) {
             // Thumbnail
-            #if canImport(AppKit)
             Image(nsImage: item.nsImage)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -408,7 +430,11 @@ struct ScreenshotCard: View {
             Text(imageDimensions)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
-            #endif
+
+            // File size
+            Text(ByteCountFormatter.string(fromByteCount: Int64(item.imageData.count), countStyle: .file))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
 
             // Label
             HStack {

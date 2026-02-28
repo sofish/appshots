@@ -1,11 +1,7 @@
 import Foundation
 import CoreGraphics
-#if canImport(CoreText)
 import CoreText
-#endif
-#if canImport(AppKit)
 import AppKit
-#endif
 
 /// Renders heading and subheading text using Core Text for precise typographic control.
 /// Uses SF Pro Display as primary font (macOS system), with fallbacks.
@@ -27,6 +23,9 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: true)
 
         // For ALL CAPS headlines, use positive tracking (caps need more breathing room)
@@ -59,6 +58,9 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         let wordCount = text.split(separator: " ").count
         let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: true)
 
@@ -93,6 +95,9 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         // Draw soft blur shadow by rendering shadow text 3 times at slightly different offsets
         // This creates a gaussian-like shadow effect for improved quality
         let baseOffset: CGFloat = fontSize * 0.04
@@ -125,6 +130,9 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: false)
 
         let attributes: [NSAttributedString.Key: Any] = [

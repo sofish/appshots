@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(AppKit)
 import AppKit
-#endif
 import CoreGraphics
 
 /// Manages device frame assets and handles screenshot embedding into frames.
@@ -32,9 +30,18 @@ struct DeviceFrame {
         }
     }
 
+    /// Returns a human-readable name for the given device frame style.
+    func frameStyleName(for style: FrameStyle) -> String {
+        switch style {
+        case .realistic: return "Realistic Device Frame"
+        case .clay: return "Clay Mockup"
+        case .minimal: return "Minimal Outline"
+        case .none: return "No Frame"
+        }
+    }
+
     // MARK: - Frame Loading
 
-    #if canImport(AppKit)
     /// Load a device frame image from the bundle's Asset Catalog.
     func loadFrame(for device: DeviceSize = .iPhone6_7, style: FrameStyle = .realistic) -> NSImage? {
         let assetName = "\(device.frameAssetName)_\(style.rawValue)"
@@ -281,6 +288,16 @@ struct DeviceFrame {
         }
         context.restoreGState()
 
+        // Top edge highlight
+        context.saveGState()
+        context.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.2))
+        context.setLineWidth(1.0)
+        let topHighlightY = bodyRect.maxY - radius
+        context.move(to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.maxY))
+        context.addLine(to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.maxY))
+        context.strokePath()
+        context.restoreGState()
+
         // Inner screen cutout (slightly inset)
         let inset = size.width * 0.025
         let screenRect = bodyRect.insetBy(dx: inset, dy: inset)
@@ -354,7 +371,6 @@ struct DeviceFrame {
         }
         return NSImage(cgImage: cgImage, size: size)
     }
-    #endif
 
     // MARK: - Screen Inset Calculation
 

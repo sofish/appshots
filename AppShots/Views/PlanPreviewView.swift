@@ -5,7 +5,7 @@ import SwiftUI
 /// layout selector, and visual direction preview.
 /// Key insight: This step costs zero compute — changes are instant.
 struct PlanPreviewView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
 
     // Iteration 36: Inline color editing
     @State private var editingColor: String? // "primary", "accent", "text", or nil
@@ -20,6 +20,9 @@ struct PlanPreviewView: View {
     // Iteration 31: Validation warnings
     @State private var dismissedWarnings: Set<String> = []
 
+    // Collapse/expand all screen card details
+    @State private var allCardsCollapsed = false
+
     // MARK: - Validation Warnings
 
     private var validationWarnings: [String] {
@@ -31,11 +34,19 @@ struct PlanPreviewView: View {
             warnings.append("Try adding tilt to 1-2 screens for energy")
         }
 
+        // Check for duplicate headings
+        let headings = appState.screenPlan.screens.map(\.heading)
+        let duplicates = Set(headings.filter { h in headings.filter { $0 == h }.count > 1 })
+        for duplicate in duplicates.sorted() where !duplicate.isEmpty {
+            warnings.append("Duplicate heading: \"\(duplicate)\"")
+        }
+
         // Filter out dismissed warnings
         return warnings.filter { !dismissedWarnings.contains($0) }
     }
 
     var body: some View {
+        @Bindable var appState = appState
         VStack(spacing: 0) {
             header
             Divider()
@@ -71,7 +82,7 @@ struct PlanPreviewView: View {
                             .font(.caption2)
                             .lineLimit(1)
                         Button {
-                            withAnimation(.easeOut(duration: 0.2)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                                 dismissedWarnings.insert(warning)
                             }
                         } label: {
@@ -94,8 +105,30 @@ struct PlanPreviewView: View {
 
     // MARK: - Header
 
+    /// Total word count across all screen headings
+    private var totalHeadingWordCount: Int {
+        appState.screenPlan.screens.reduce(0) { $0 + $1.heading.split(separator: " ").count }
+    }
+
     private var header: some View {
         HStack {
+            if !appState.screenPlan.screens.isEmpty {
+                Button {
+                    withAnimation {
+                        allCardsCollapsed.toggle()
+                    }
+                } label: {
+                    Label(allCardsCollapsed ? "Expand All" : "Collapse All",
+                          systemImage: allCardsCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Text("\(totalHeadingWordCount) words total")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Spacer()
 
             if !appState.screenPlan.screens.isEmpty {
@@ -129,7 +162,7 @@ struct PlanPreviewView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(Color(.controlBackgroundColor))
     }
 
     // MARK: - Inline Color Editing
@@ -286,7 +319,8 @@ struct PlanPreviewView: View {
                     ScreenCardView(
                         screen: binding(for: index),
                         index: index,
-                        screenshotItem: index < appState.screenshots.count ? appState.screenshots[index] : nil
+                        screenshotItem: index < appState.screenshots.count ? appState.screenshots[index] : nil,
+                        isCollapsed: allCardsCollapsed
                     )
                     .opacity(draggingScreenID == screen.id ? 0.4 : 1.0)
                     .onDrag {
@@ -351,8 +385,16 @@ struct PlanPreviewView: View {
             .buttonStyle(.bordered)
             .disabled(appState.isLoading)
 
-            Button("Generate Screenshots") {
+            Button {
                 appState.startGeneration()
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Generate Screenshots")
+                    if !appState.screenPlan.screens.isEmpty {
+                        Text("(\(appState.screenPlan.screens.count))")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -406,10 +448,11 @@ struct PlanPreviewView: View {
 // MARK: - Screen Card View
 
 struct ScreenCardView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) var appState
     @Binding var screen: ScreenConfig
     let index: Int
     let screenshotItem: ScreenshotItem?
+    var isCollapsed: Bool = false
     @State private var showPromptEditor = false
     @State private var isVisualDirectionExpanded = false
 
@@ -448,13 +491,15 @@ struct ScreenCardView: View {
     }
 
     var body: some View {
+        @Bindable var appState = appState
         VStack(alignment: .leading, spacing: 12) {
             // Card header with drag handle
             HStack {
                 // Drag handle hint
                 Image(systemName: "line.3.horizontal")
                     .font(.caption)
-                    .foregroundStyle(.quaternary)
+                    .foregroundStyle(.tertiary)
+                    .padding(.trailing, 4)
 
                 HStack(spacing: 4) {
                     Image(systemName: "iphone")
@@ -479,18 +524,26 @@ struct ScreenCardView: View {
                         .background(Capsule().fill(.orange.opacity(0.2)))
                         .foregroundStyle(.orange)
                 }
+
+                if isCollapsed {
+                    Text(screen.heading)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
+
+            if !isCollapsed {
 
             // Screenshot thumbnail
             if let item = screenshotItem {
-                #if canImport(AppKit)
                 Image(nsImage: item.nsImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(maxHeight: 180)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
-                #endif
             }
 
             // Heading (editable) with character count and strength badge
@@ -635,6 +688,8 @@ struct ScreenCardView: View {
                     .controlSize(.small)
                 }
             }
+
+            } // end if !isCollapsed
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(.background))
