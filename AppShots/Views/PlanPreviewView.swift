@@ -326,15 +326,25 @@ struct ScreenCardView: View {
 
     // MARK: - iPad Bindings
 
+    /// Ensure iPadConfig exists, preserving any existing values.
+    private func ensureIPadConfig() {
+        if screen.iPadConfig == nil {
+            let resolved = screen.resolvedIPadConfig
+            screen.iPadConfig = iPadScreenConfig(
+                layoutType: resolved.layoutType,
+                orientation: resolved.orientation,
+                imagePrompt: resolved.imagePrompt,
+                visualDirection: resolved.visualDirection
+            )
+        }
+    }
+
     private var iPadLayoutBinding: Binding<iPadLayoutType> {
         Binding(
             get: { screen.resolvedIPadConfig.layoutType },
             set: { newLayout in
-                if screen.iPadConfig == nil {
-                    screen.iPadConfig = iPadScreenConfig(layoutType: newLayout)
-                } else {
-                    screen.iPadConfig?.layoutType = newLayout
-                }
+                ensureIPadConfig()
+                screen.iPadConfig?.layoutType = newLayout
             }
         )
     }
@@ -343,11 +353,8 @@ struct ScreenCardView: View {
         Binding(
             get: { screen.resolvedIPadConfig.orientation },
             set: { newOrientation in
-                if screen.iPadConfig == nil {
-                    screen.iPadConfig = iPadScreenConfig(orientation: newOrientation)
-                } else {
-                    screen.iPadConfig?.orientation = newOrientation
-                }
+                ensureIPadConfig()
+                screen.iPadConfig?.orientation = newOrientation
             }
         )
     }

@@ -397,8 +397,7 @@ final class AppState: ObservableObject {
 
                 // Warn if iPad sizes selected but no iPad images
                 if !iPadSizes.isEmpty && iPadComposedImages.isEmpty {
-                    errorMessage = "iPad sizes selected but no iPad images generated. Only iPhone images were exported."
-                    showError = true
+                    showError("iPad sizes selected but no iPad images generated. Only iPhone images were exported.")
                 }
 
                 exportResults = allResults
