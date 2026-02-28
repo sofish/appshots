@@ -351,7 +351,8 @@ final class AppState: ObservableObject {
             do {
                 let allSelectedSizes = DeviceSize.allSizes.filter { selectedSizes.contains($0.id) }
                 let iPhoneSizes = allSelectedSizes.filter { $0.deviceType == .iPhone }
-                let iPadSizes = allSelectedSizes.filter { $0.deviceType == .iPad }
+                // Exclude landscape iPad sizes — compositor always renders portrait canvas
+                let iPadSizes = allSelectedSizes.filter { $0.deviceType == .iPad && $0.id != "ipad_13_landscape" }
 
                 var allResults: [Exporter.ExportResult] = []
 

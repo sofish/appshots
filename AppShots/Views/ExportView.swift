@@ -37,6 +37,16 @@ struct ExportView: View {
         .padding()
     }
 
+    /// iPad images are always composed at portrait canvas dimensions.
+    /// Landscape iPad sizes would distort the output, so we filter them out.
+    private var availableSizes: [DeviceSize] {
+        DeviceSize.allSizes.filter { size in
+            // Exclude landscape iPad sizes — compositor always renders at portrait canvas
+            if size.id == "ipad_13_landscape" { return false }
+            return true
+        }
+    }
+
     // MARK: - Export Options
 
     private var exportOptions: some View {
@@ -134,7 +144,7 @@ struct ExportView: View {
                 .foregroundStyle(.secondary)
 
             VStack(spacing: 8) {
-                ForEach(DeviceSize.allSizes, id: \.id) { size in
+                ForEach(availableSizes, id: \.id) { size in
                     let isSelected = appState.selectedSizes.contains(size.id)
 
                     HStack {
@@ -242,8 +252,8 @@ struct ExportView: View {
 
             // File count estimate
             #if canImport(AppKit)
-            let iPhoneSizeCount = DeviceSize.allSizes.filter { $0.deviceType == .iPhone && appState.selectedSizes.contains($0.id) }.count
-            let iPadSizeCount = DeviceSize.allSizes.filter { $0.deviceType == .iPad && appState.selectedSizes.contains($0.id) }.count
+            let iPhoneSizeCount = availableSizes.filter { $0.deviceType == .iPhone && appState.selectedSizes.contains($0.id) }.count
+            let iPadSizeCount = availableSizes.filter { $0.deviceType == .iPad && appState.selectedSizes.contains($0.id) }.count
             let iPhoneFiles = appState.composedImages.count * iPhoneSizeCount
             let iPadFiles = appState.iPadComposedImages.count * iPadSizeCount
             let totalFiles = iPhoneFiles + iPadFiles
