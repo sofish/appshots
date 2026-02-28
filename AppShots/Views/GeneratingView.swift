@@ -63,6 +63,26 @@ struct GeneratingView: View {
                 Text(appState.loadingMessage)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                if appState.generateIPad {
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "iphone")
+                            Text("\(appState.backgroundImages.count)/\(appState.screenPlan.screens.count)")
+                                .monospacedDigit()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "ipad")
+                            Text("\(appState.iPadBackgroundImages.count)/\(appState.screenPlan.screens.count)")
+                                .monospacedDigit()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             // Per-screen progress
@@ -134,12 +154,11 @@ struct GeneratingView: View {
 
             Spacer()
 
-            if !appState.isLoading && appState.generationProgress >= 1.0 {
-                Button("Continue to Compose") {
-                    appState.currentStep = .composing
-                    #if canImport(AppKit)
-                    appState.composeAll()
-                    #endif
+            // Allow advancing when generation is done or has partial results
+            if !appState.isLoading && !appState.backgroundImages.isEmpty {
+                Button(appState.generationProgress >= 1.0 ? "Continue to Export" : "Continue with \(appState.backgroundImages.count) screenshots") {
+                    // Skip composing step — Gemini output is used directly as final images
+                    appState.currentStep = .export
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)

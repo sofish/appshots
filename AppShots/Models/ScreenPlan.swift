@@ -32,6 +32,10 @@ enum iPadLayoutType: String, Codable, CaseIterable, Identifiable {
         }
     }
 
+    /// Tier 1 layouts (fully implemented in compositor)
+    /// Fully implemented layouts available in the UI picker
+    static let tier1Cases: [iPadLayoutType] = [.standard, .angled, .frameless, .headlineDominant, .uiForward, .darkLightDual, .splitPanel]
+
     /// Derive an iPad layout from iPhone layout modifiers
     static func fromIPhoneModifiers(tilt: Bool, position: String, fullBleed: Bool) -> iPadLayoutType {
         if fullBleed { return .uiForward }

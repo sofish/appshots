@@ -176,6 +176,10 @@ struct ExportView: View {
                             Text("\(fileCount) files")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
+                        } else if size.deviceType == .iPad && isSelected {
+                            Text("No iPad images")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
                         }
                         #endif
                     }

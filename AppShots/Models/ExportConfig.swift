@@ -87,14 +87,22 @@ extension DeviceSize {
 
     static let iPad13 = DeviceSize(
         id: "ipad_13",
-        displayName: "iPad 13\"",
+        displayName: "iPad 13\" (Portrait)",
         width: 2048,
         height: 2732,
         isRequired: false
     )
 
+    static let iPad13Landscape = DeviceSize(
+        id: "ipad_13_landscape",
+        displayName: "iPad 13\" (Landscape)",
+        width: 2732,
+        height: 2048,
+        isRequired: false
+    )
+
     static let allSizes: [DeviceSize] = [
-        .iPhone6_9, .iPhone6_7, .iPhone6_5, .iPhone5_5, .iPad13
+        .iPhone6_9, .iPhone6_7, .iPhone6_5, .iPhone5_5, .iPad13, .iPad13Landscape
     ]
 
     static let defaultSizes: [DeviceSize] = [

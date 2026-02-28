@@ -127,45 +127,69 @@ enum SystemPrompts {
 
     ## iPad Screenshot Strategy (CRITICAL — you MUST include ipad_config for each screen)
 
-    This app also targets iPad. The iPad canvas is ~3:4 aspect ratio (2048×2732 portrait, 2732×2048 landscape),
-    much wider and more square than iPhone's ~9:19.5. This fundamentally changes layout strategy.
+    This app also targets iPad. The iPad canvas is ~3:4 aspect ratio (2048×2732 portrait),
+    much wider and more square than iPhone's ~9:19.5. This fundamentally changes layout strategy:
+    - iPad's wider canvas means MORE visible screen content per shot
+    - Text must be proportionally larger to maintain visual hierarchy
+    - iPad users expect to see iPad-specific UI advantages (split views, sidebars, toolbars)
 
     ### iPad Layout Types (choose one per screen):
 
-    - `standard`: Centered iPad device frame at 70% canvas width, text above. The default and most reliable layout.
-    - `angled`: iPad tilted ~8 degrees for dynamic 3D perspective. Use on 1-2 screens max.
-    - `frameless`: Floating UI with rounded corners and drop shadow, no device bezel. Modern, clean, confidence-building.
-    - `headline_dominant`: Large text area takes 45% of canvas, smaller device in bottom 55%. Best for conceptual value props.
-    - `ui_forward`: Full-bleed screenshot fills entire canvas edge-to-edge, minimal text. Only for visually stunning UIs.
-    - `multi_orientation`: Portrait + landscape devices side by side (Tier 2, will fall back to standard if not supported).
-    - `dark_light_dual`: Split canvas showing dark and light mode variants (Tier 2).
-    - `split_panel`: 2-3 panels showing different views side by side (Tier 2).
-    - `before_after`: Diagonal split transformation effect (Tier 2).
+    - `standard`: Centered iPad Pro device frame at 70% canvas width. Device extends from near-top, text anchored at bottom.
+      Best for: General feature screens, hero shots. Most reliable and highest-converting layout.
+      Composition: Background gradient fills canvas, iPad mockup centered with thin bezel, heading text below device.
 
-    ### iPad Layout Mix Strategy:
-    - Hero shot: Use `standard` or `headline_dominant` for maximum clarity
-    - Feature screens: Mix `frameless`, `standard`, and `angled` for visual variety
-    - At most 1 `ui_forward` (full bleed) for a visually stunning screen
-    - iPad's wider canvas allows multi-column UIs, sidebars, and expanded toolbars — highlight these in image prompts
-    - Each screen shows why the iPad version is worth downloading separately from iPhone
+    - `angled`: iPad tilted ~8 degrees for dynamic 3D perspective. Same proportions as standard but with rotation.
+      Best for: Adding visual energy to a feature screen. Use on 1-2 screens max.
+      Composition: Same as standard but device rotated, slight shadow gives depth.
 
-    ### iPad image_prompt Rules:
-    - Always mention "iPad" or "iPad Pro" in the prompt (not "iPhone")
-    - Specify the wider ~3:4 canvas and portrait orientation
-    - Emphasize iPad-specific UI: sidebars, multi-column layouts, toolbar-rich interfaces, split views
-    - Example: "Generate an iPad App Store screenshot showcasing the uploaded UI in a sleek iPad Pro mockup, centered. Bold heading 'Design Without Limits' at the top. Deep indigo gradient background with subtle mesh gradient accents. Premium editorial quality. 2048×2732 portrait."
-    - Another example: "Cinematic iPad showcase — uploaded screenshot displayed as a frameless floating UI with rounded corners and elegant shadow. Text 'Your Workspace, Perfected' above. Clean white-to-light-gray gradient. Professional App Store quality."
+    - `frameless`: Floating UI screenshot with rounded corners and drop shadow — NO device bezel at all.
+      Best for: Showcasing clean UI without distraction, modern SaaS/productivity apps.
+      Composition: Just the screenshot floating on the background with elegant shadow, text below.
 
-    ### JSON Schema for iPad Config:
-    Add `ipad_config` to each screen:
+    - `headline_dominant`: Large bold text takes top 42%, smaller iPad device in bottom 58%.
+      Best for: Hero shot or conceptual value prop where the MESSAGE matters more than the UI.
+      Composition: Big bold headline dominates top half, smaller iPad mockup beneath. High text contrast essential.
+
+    - `ui_forward`: Full-bleed screenshot fills entire canvas edge-to-edge. Minimal/no device frame.
+      Best for: Visually stunning UIs, immersive apps (photo editors, games, maps). At most 1 per set.
+      Composition: Screenshot IS the background, with heading overlaid at bottom via gradient scrim.
+
+    ### iPad Layout Mix Strategy (FOLLOW CLOSELY):
+    - Hero shot (index 0): Use `standard` or `headline_dominant` — clarity wins installs
+    - Feature screens (index 1-3): Mix `frameless`, `standard`, and `angled`
+    - Visually stunning screen: At most 1 `ui_forward`
+    - NEVER use the same layout for 3+ screens in a row — vary for visual rhythm
+    - Each iPad screen must justify WHY the iPad version matters (bigger canvas, split view, etc.)
+
+    ### iPad image_prompt Rules (CRITICAL — these prompts go directly to the AI image generator):
+    - ALWAYS mention "iPad Pro" in the prompt — never "iPhone"
+    - ALWAYS include the resolution "2048×2732 portrait" or "2732×2048 landscape"
+    - ALWAYS include the heading text you want rendered in the image
+    - Describe iPad-specific UI advantages visible in the screenshot: sidebars, multi-column layouts,
+      expanded toolbars, keyboard shortcuts bar, split view, drag-and-drop surfaces
+    - Match the layout_type in your description:
+      - `standard`: "...in a sleek iPad Pro device mockup, centered..."
+      - `angled`: "...iPad Pro at a dynamic angle, perspective tilt..."
+      - `frameless`: "...as floating UI with rounded corners and elegant shadow, no device frame..."
+      - `headline_dominant`: "...bold text dominates, smaller iPad below..."
+      - `ui_forward`: "...full-bleed screenshot filling the entire canvas..."
+    - Example (standard): "iPad Pro App Store screenshot. Uploaded UI in a centered iPad Pro mockup with thin bezel. Heading 'Design Without Limits' above. Deep indigo gradient background with subtle mesh accents. 2048×2732 portrait. Premium editorial quality."
+    - Example (frameless): "iPad showcase — uploaded screenshot as frameless floating UI with rounded corners and soft shadow. Clean white-to-gray gradient background. Text 'Your Workspace, Perfected' above. 2048×2732 portrait."
+    - Example (headline_dominant): "Bold headline 'Manage Everything' dominates the top half. Smaller iPad Pro mockup below shows the dashboard UI. Dark gradient background. 2048×2732 portrait."
+
+    ### JSON Schema — add `ipad_config` to each screen:
     ```json
     "ipad_config": {
-        "layout_type": "standard|angled|frameless|headline_dominant|ui_forward|multi_orientation|dark_light_dual|split_panel|before_after",
-        "orientation": "portrait|landscape",
-        "image_prompt": "iPad-specific creative prompt for the AI image generator...",
-        "visual_direction": "iPad-specific visual direction..."
+        "layout_type": "standard|angled|frameless|headline_dominant|ui_forward",
+        "orientation": "portrait",
+        "image_prompt": "iPad-specific creative prompt mentioning iPad Pro, resolution, and layout type...",
+        "visual_direction": "iPad-specific background description..."
     }
     ```
+    - The `image_prompt` field is REQUIRED and must be iPad-specific (not a copy of the iPhone prompt)
+    - Use "portrait" orientation unless the app has a strong landscape use case
+    - Keep Tier 1 layouts only (standard, angled, frameless, headline_dominant, ui_forward)
     """
 
     // MARK: - User-Facing Prompt Template

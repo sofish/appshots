@@ -182,9 +182,17 @@ struct ScreenCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Card header
             HStack {
-                Label("Screen \(index + 1)", systemImage: "iphone")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Image(systemName: "iphone")
+                    if appState.generateIPad {
+                        Text("+")
+                            .font(.caption2)
+                        Image(systemName: "ipad")
+                    }
+                    Text("Screen \(index + 1)")
+                }
+                .font(.caption.bold())
+                .foregroundStyle(.secondary)
 
                 Spacer()
 
@@ -287,7 +295,8 @@ struct ScreenCardView: View {
                         .foregroundStyle(.secondary)
 
                     Picker("Layout", selection: iPadLayoutBinding) {
-                        ForEach(iPadLayoutType.allCases) { layout in
+                        // Show fully implemented layouts
+                        ForEach(iPadLayoutType.tier1Cases) { layout in
                             Text(layout.displayName).tag(layout)
                         }
                     }
@@ -299,6 +308,7 @@ struct ScreenCardView: View {
                         Text("Landscape").tag("landscape")
                     }
                     .pickerStyle(.segmented)
+                    .disabled(screen.resolvedIPadConfig.layoutType == .uiForward)
                     .controlSize(.small)
                 }
             }

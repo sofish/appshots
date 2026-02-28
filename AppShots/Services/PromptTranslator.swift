@@ -64,45 +64,59 @@ struct PromptTranslator {
         var parts: [String] = []
 
         let layoutDesc: String
+        let compositionHint: String
         switch iPadConfig.layoutType {
         case .standard:
-            layoutDesc = "centered iPad Pro mockup"
+            layoutDesc = "centered iPad Pro device mockup with thin bezel"
+            compositionHint = "Show the uploaded UI inside a sleek iPad Pro frame, centered on the canvas."
         case .angled:
-            layoutDesc = "iPad Pro mockup with dynamic 3D perspective tilt"
+            layoutDesc = "iPad Pro mockup with dynamic 3D perspective tilt (~8 degrees)"
+            compositionHint = "Show the uploaded UI in an iPad Pro at a dynamic angle for visual energy."
         case .frameless:
             layoutDesc = "frameless floating UI with rounded corners and elegant drop shadow, no device bezel"
+            compositionHint = "Display the uploaded UI as floating content with rounded corners and soft shadow — no device frame."
         case .headlineDominant:
-            layoutDesc = "large bold headline taking upper half, smaller iPad mockup below"
+            layoutDesc = "large bold headline dominating the top 40%, smaller iPad Pro mockup below"
+            compositionHint = "Make the heading text the visual hero. Smaller iPad device shows the UI beneath."
         case .uiForward:
-            layoutDesc = "full-bleed UI filling entire canvas edge-to-edge, minimal text overlay"
+            layoutDesc = "full-bleed UI filling entire canvas edge-to-edge"
+            compositionHint = "The uploaded screenshot fills the entire canvas. Overlay heading at bottom with gradient scrim."
         case .multiOrientation:
-            layoutDesc = "iPad shown in both portrait and landscape side by side"
+            layoutDesc = "iPad shown in both portrait and landscape orientations"
+            compositionHint = "Show the uploaded UI inside a centered iPad Pro frame."
         case .darkLightDual:
-            layoutDesc = "split view showing dark mode and light mode variants"
+            layoutDesc = "split view showing dark and light mode variants"
+            compositionHint = "Show the uploaded UI inside a centered iPad Pro frame."
         case .splitPanel:
             layoutDesc = "multiple app views shown in side-by-side panels"
+            compositionHint = "Show the uploaded UI inside a centered iPad Pro frame."
         case .beforeAfter:
-            layoutDesc = "diagonal before/after transformation split"
+            layoutDesc = "before/after transformation split"
+            compositionHint = "Show the uploaded UI inside a centered iPad Pro frame."
         }
 
-        parts.append("Generate an iPad App Store screenshot (2048×2732, \(iPadConfig.orientation)) for \"\(plan.appName)\".")
+        let resolution = iPadConfig.orientation == "landscape" ? "2732×2048" : "2048×2732"
+
+        parts.append("Generate an iPad Pro App Store screenshot (\(resolution), \(iPadConfig.orientation)) for \"\(plan.appName)\".")
         parts.append("Layout: \(layoutDesc).")
+        parts.append(compositionHint)
         parts.append("Heading: \"\(screen.heading)\"")
 
         if !screen.subheading.isEmpty {
             parts.append("Subheading: \"\(screen.subheading)\"")
         }
 
-        parts.append("Style: \(plan.tone.rawValue), colors: \(plan.colors.primary) / \(plan.colors.accent)")
+        parts.append("Style: \(plan.tone.rawValue). Background colors: \(plan.colors.primary) primary, \(plan.colors.accent) accent. Text: \(plan.colors.text) on \(plan.colors.primary).")
 
         if !iPadConfig.visualDirection.isEmpty {
-            parts.append("Background: \(iPadConfig.visualDirection)")
+            parts.append("Visual direction: \(iPadConfig.visualDirection)")
         } else if !screen.visualDirection.isEmpty {
-            parts.append("Background: \(screen.visualDirection)")
+            parts.append("Visual direction: \(screen.visualDirection)")
         }
 
-        parts.append("Premium editorial quality.")
+        parts.append("Emphasize iPad-specific UI advantages: wider canvas, expanded toolbars, sidebars, or split views if visible in the screenshot.")
+        parts.append("Premium editorial App Store quality.")
 
-        return parts.joined(separator: "\n")
+        return parts.joined(separator: " ")
     }
 }

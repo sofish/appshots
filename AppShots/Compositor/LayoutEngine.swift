@@ -73,9 +73,13 @@ struct LayoutEngine {
         layoutType: iPadLayoutType,
         tilt: Bool,
         canvasSize: CGSize,
-        hasSubheading: Bool
+        hasSubheading: Bool,
+        orientation: String = "portrait"
     ) -> LayoutResult {
-        let deviceAspect = DeviceType.iPad.aspectRatio
+        // For landscape orientation, invert the aspect ratio so device is wider than tall
+        let deviceAspect = orientation == "landscape"
+            ? 1.0 / DeviceType.iPad.aspectRatio
+            : DeviceType.iPad.aspectRatio
 
         switch layoutType {
         case .standard:
@@ -95,8 +99,14 @@ struct LayoutEngine {
             result.deviceType = .iPad
             return result
 
-        case .multiOrientation, .darkLightDual, .splitPanel, .beforeAfter:
-            // Tier 2 layouts — fall back to standard for now
+        case .darkLightDual:
+            return calculateIPadDualSplit(canvasSize: canvasSize, hasSubheading: hasSubheading, deviceAspect: deviceAspect)
+
+        case .splitPanel:
+            return calculateIPadSplitPanel(canvasSize: canvasSize, hasSubheading: hasSubheading, deviceAspect: deviceAspect)
+
+        case .multiOrientation, .beforeAfter:
+            // Falls back to standard — these need more complex multi-asset rendering
             return calculateIPadStandard(canvasSize: canvasSize, hasSubheading: hasSubheading, deviceAspect: deviceAspect)
         }
     }
@@ -348,8 +358,8 @@ struct LayoutEngine {
             textWidth: w - 2 * margin,
             textX: margin,
             hasSubheading: hasSubheading,
-            headingScale: 0.065,
-            subheadingScale: 0.035
+            headingScale: 0.075,       // Larger than iPhone — iPad's wider canvas needs bigger text
+            subheadingScale: 0.042
         )
 
         var result = LayoutResult(
@@ -392,8 +402,8 @@ struct LayoutEngine {
             textWidth: w - 2 * margin,
             textX: margin,
             hasSubheading: hasSubheading,
-            headingScale: 0.065,
-            subheadingScale: 0.035
+            headingScale: 0.075,
+            subheadingScale: 0.042
         )
 
         var result = LayoutResult(
@@ -421,13 +431,15 @@ struct LayoutEngine {
         let margin = w * hMargin
 
         // Frameless: screenshot displayed at ~75% width with rounded corners and drop shadow
+        // Slightly smaller than standard to leave room for shadow + text below
         let screenWidth = w * 0.75
         let screenHeight = screenWidth * deviceAspect
         let screenX = (w - screenWidth) / 2
         let screenY = h * 0.02
 
         let deviceRect = CGRect(x: screenX, y: screenY, width: screenWidth, height: screenHeight)
-        // No bezel — screen inset matches device rect (no border offset)
+        // Frameless: screenInset origin (0,0) means "no border offset from deviceRect"
+        // This is correct because drawFramelessDevice draws screenshot directly in deviceRect
         let screenInset = CGRect(x: 0, y: 0, width: screenWidth, height: screenHeight)
 
         let textTopY = min(deviceRect.maxY + h * 0.02, h - h * 0.06)
@@ -437,8 +449,8 @@ struct LayoutEngine {
             textWidth: w - 2 * margin,
             textX: margin,
             hasSubheading: hasSubheading,
-            headingScale: 0.065,
-            subheadingScale: 0.035
+            headingScale: 0.075,
+            subheadingScale: 0.042
         )
 
         var result = LayoutResult(
@@ -466,27 +478,125 @@ struct LayoutEngine {
         let h = canvasSize.height
         let margin = w * hMargin
 
-        // Text occupies top 45% of canvas
-        let textZoneHeight = h * 0.45
+        // Text zone: top 42% of canvas (text anchored near top)
+        let textZoneBottom = h * 0.58   // where device zone starts
 
         let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
             canvasSize: canvasSize,
-            topY: h - margin,    // Start from top with margin
+            topY: h - margin * 1.5,    // Top of canvas with comfortable margin
             textWidth: w - 2 * margin,
             textX: margin,
             hasSubheading: hasSubheading,
-            headingScale: 0.09,   // Larger heading for dominant text
-            subheadingScale: 0.045
+            headingScale: 0.10,        // Large heading for dominant text style
+            subheadingScale: 0.05
         )
 
-        // Device in bottom 55%, smaller (60% width)
+        // Device in bottom 58%, smaller (60% width), anchored to bottom
         let deviceWidth = w * 0.60
-        let deviceY = h - textZoneHeight - h * 0.02
+        let deviceHeight = deviceWidth * deviceAspect
+        // Position device so it extends from textZoneBottom downward, partially clipped at bottom
+        let deviceY = textZoneBottom - deviceHeight - h * 0.02
         let (deviceRect, screenInset) = makeDevice(
             width: deviceWidth,
             x: (w - deviceWidth) / 2,
-            y: deviceY - deviceWidth * deviceAspect + h * 0.15,
+            y: deviceY,
             deviceAspect: deviceAspect
+        )
+
+        var result = LayoutResult(
+            headingRect: headingRect,
+            subheadingRect: subheadingRect,
+            deviceRect: deviceRect,
+            screenInset: screenInset,
+            headingFontSize: headingFS,
+            subheadingFontSize: subheadingFS,
+            rotationAngle: 0
+        )
+        result.deviceType = .iPad
+        return result
+    }
+
+    // MARK: - iPad Dark/Light Dual Split
+
+    /// Split canvas vertically into two halves — left dark, right light.
+    /// Single device centered straddling the split line.
+    private func calculateIPadDualSplit(
+        canvasSize: CGSize,
+        hasSubheading: Bool,
+        deviceAspect: CGFloat
+    ) -> LayoutResult {
+        let w = canvasSize.width
+        let h = canvasSize.height
+        let margin = w * hMargin
+
+        // Device centered at 55% width — straddles the vertical split
+        let deviceWidth = w * 0.55
+        let (deviceRect, screenInset) = makeDevice(
+            width: deviceWidth,
+            x: (w - deviceWidth) / 2,
+            y: -h * 0.03,
+            deviceAspect: deviceAspect
+        )
+
+        let textTopY = min(deviceRect.maxY + h * 0.02, h - h * 0.06)
+        let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+            canvasSize: canvasSize,
+            topY: textTopY,
+            textWidth: w - 2 * margin,
+            textX: margin,
+            hasSubheading: hasSubheading,
+            headingScale: 0.075,
+            subheadingScale: 0.042
+        )
+
+        var result = LayoutResult(
+            headingRect: headingRect,
+            subheadingRect: subheadingRect,
+            deviceRect: deviceRect,
+            screenInset: screenInset,
+            headingFontSize: headingFS,
+            subheadingFontSize: subheadingFS,
+            rotationAngle: 0
+        )
+        result.deviceType = .iPad
+        return result
+    }
+
+    // MARK: - iPad Split Panel (2-3 side-by-side views)
+
+    /// Two smaller devices side by side, showing different views.
+    /// For now, renders as a single device at smaller scale (60%) with space for a second.
+    private func calculateIPadSplitPanel(
+        canvasSize: CGSize,
+        hasSubheading: Bool,
+        deviceAspect: CGFloat
+    ) -> LayoutResult {
+        let w = canvasSize.width
+        let h = canvasSize.height
+        let margin = w * hMargin
+
+        // Primary device at 50% width, offset to the left
+        let deviceWidth = w * 0.50
+        let (deviceRect, screenInset) = makeDevice(
+            width: deviceWidth,
+            x: w * 0.05,
+            y: -h * 0.03,
+            deviceAspect: deviceAspect
+        )
+
+        // Text on the right side of the device
+        let textX = deviceRect.maxX + margin
+        let textWidth = w - textX - margin
+        let textTopY = h * 0.70
+
+        let (headingRect, subheadingRect, headingFS, subheadingFS) = makeTextRects(
+            canvasSize: canvasSize,
+            topY: textTopY,
+            textWidth: textWidth,
+            textX: textX,
+            hasSubheading: hasSubheading,
+            headingScale: 0.065,
+            subheadingScale: 0.038
         )
 
         var result = LayoutResult(

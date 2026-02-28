@@ -215,34 +215,40 @@ final class AppState: ObservableObject {
                 }
                 generationProgress = 0
 
-                let allResults = try await backgroundGenerator.generateAll(
-                    prompts: allPrompts,
-                    screenshotDataMap: screenshotDataMap
-                ) { [weak self] index, data in
-                    Task { @MainActor in
-                        // Route results: indices >= 1000 are iPad, < 1000 are iPhone
-                        if index >= 1000 {
-                            self?.iPadBackgroundImages[index - 1000] = data
-                        } else {
-                            self?.backgroundImages[index] = data
+                // Generate all images. The onProgress callback routes results incrementally,
+                // so even if the TaskGroup throws (one image fails), we keep partial results.
+                var generationError: Error?
+                do {
+                    let allResults = try await backgroundGenerator.generateAll(
+                        prompts: allPrompts,
+                        screenshotDataMap: screenshotDataMap
+                    ) { [weak self] index, data in
+                        Task { @MainActor in
+                            if index >= 1000 {
+                                self?.iPadBackgroundImages[index - 1000] = data
+                            } else {
+                                self?.backgroundImages[index] = data
+                            }
+
+                            let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
+                            self?.generationProgress = Double(completed) / total
+                            self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
                         }
-
-                        let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
-                        self?.generationProgress = Double(completed) / total
-                        self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
                     }
+
+                    // Route final results
+                    for (index, data) in allResults {
+                        if index >= 1000 {
+                            iPadBackgroundImages[index - 1000] = data
+                        } else {
+                            backgroundImages[index] = data
+                        }
+                    }
+                } catch {
+                    generationError = error
                 }
 
-                // Route final results
-                for (index, data) in allResults {
-                    if index >= 1000 {
-                        iPadBackgroundImages[index - 1000] = data
-                    } else {
-                        backgroundImages[index] = data
-                    }
-                }
-
-                // Step D: Use Gemini output directly as final composed images
+                // Step D: Build composed images from whatever we got (partial or full)
                 #if canImport(AppKit)
                 composedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
                     guard let data = backgroundImages[screen.index] else { return nil }
@@ -258,8 +264,20 @@ final class AppState: ObservableObject {
                 #endif
 
                 isLoading = false
+
+                // Show partial results even if some failed
                 if !backgroundImages.isEmpty {
                     currentStep = .export
+                }
+
+                // Report error for failed images
+                if let error = generationError {
+                    let successCount = backgroundImages.count + iPadBackgroundImages.count
+                    if successCount > 0 {
+                        showError("Some images failed to generate (\(successCount)/\(Int(total)) succeeded): \(error.localizedDescription)")
+                    } else {
+                        showError(error.localizedDescription)
+                    }
                 }
             } catch {
                 isLoading = false
@@ -375,6 +393,12 @@ final class AppState: ObservableObject {
                         }
                     }
                     allResults.append(contentsOf: iPadResults)
+                }
+
+                // Warn if iPad sizes selected but no iPad images
+                if !iPadSizes.isEmpty && iPadComposedImages.isEmpty {
+                    errorMessage = "iPad sizes selected but no iPad images generated. Only iPhone images were exported."
+                    showError = true
                 }
 
                 exportResults = allResults

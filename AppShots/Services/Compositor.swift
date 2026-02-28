@@ -60,7 +60,8 @@ struct Compositor {
                 layoutType: iPadCfg.layoutType,
                 tilt: input.config.tilt,
                 canvasSize: canvasSize,
-                hasSubheading: !input.config.subheading.isEmpty
+                hasSubheading: !input.config.subheading.isEmpty,
+                orientation: iPadCfg.orientation
             )
         } else {
             layout = layoutEngine.calculate(
@@ -121,7 +122,8 @@ struct Compositor {
                 layoutType: iPadCfg.layoutType,
                 tilt: config.tilt,
                 canvasSize: canvasSize,
-                hasSubheading: !config.subheading.isEmpty
+                hasSubheading: !config.subheading.isEmpty,
+                orientation: iPadCfg.orientation
             )
         } else {
             layout = layoutEngine.calculate(
@@ -298,8 +300,8 @@ struct Compositor {
             height: screenInset.height
         )
         let isIPad = targetSize.deviceType == .iPad
-        let screenCornerRadius = deviceRect.width * (isIPad ? 0.03 : 0.06)
-        let bodyCornerRadius = deviceRect.width * (isIPad ? 0.04 : 0.08)
+        let screenCornerRadius = deviceRect.width * (isIPad ? 0.045 : 0.06)
+        let bodyCornerRadius = deviceRect.width * (isIPad ? 0.055 : 0.08)
 
         // 1. Draw device body (solid dark bezel)
         if let frameImage = deviceFrame.loadFrame(for: targetSize)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {

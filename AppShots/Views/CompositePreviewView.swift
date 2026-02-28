@@ -112,6 +112,19 @@ struct CompositePreviewView: View {
                         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
                 }
                 .padding()
+            } else if currentImages.isEmpty && previewDeviceType == .iPad {
+                VStack(spacing: 12) {
+                    Image(systemName: "ipad")
+                        .font(.system(size: 36))
+                        .foregroundStyle(.quaternary)
+                    Text("No iPad images generated")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Text("Enable iPad generation in the Plan step and regenerate.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text("No preview available")
                     .foregroundStyle(.secondary)
@@ -270,7 +283,7 @@ struct CompositePreviewView: View {
 
             Button("Recompose All") {
                 #if canImport(AppKit)
-                appState.composeAll()
+                appState.composeAll(deviceType: previewDeviceType)
                 #endif
             }
             .buttonStyle(.bordered)
