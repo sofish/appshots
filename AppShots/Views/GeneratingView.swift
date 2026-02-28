@@ -63,6 +63,26 @@ struct GeneratingView: View {
                 Text(appState.loadingMessage)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                if appState.generateIPad {
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "iphone")
+                            Text("\(appState.backgroundImages.count)/\(appState.screenPlan.screens.count)")
+                                .monospacedDigit()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        HStack(spacing: 4) {
+                            Image(systemName: "ipad")
+                            Text("\(appState.iPadBackgroundImages.count)/\(appState.screenPlan.screens.count)")
+                                .monospacedDigit()
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
             }
 
             // Per-screen progress
@@ -82,20 +102,34 @@ struct GeneratingView: View {
     }
 
     private func screenProgressCard(_ screen: ScreenConfig) -> some View {
-        let isComplete = appState.backgroundImages[screen.index] != nil
+        let iPhoneComplete = appState.backgroundImages[screen.index] != nil
+        let iPadComplete = appState.iPadBackgroundImages[screen.index] != nil
+        let allComplete = iPhoneComplete && (!appState.generateIPad || iPadComplete)
 
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
+                    .fill(allComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
                     .frame(height: 60)
 
-                if isComplete {
+                if allComplete {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title2)
                         .foregroundStyle(.green)
                 } else if appState.isLoading {
-                    ProgressView()
+                    VStack(spacing: 4) {
+                        ProgressView()
+                        if appState.generateIPad {
+                            HStack(spacing: 4) {
+                                Image(systemName: "iphone")
+                                    .font(.caption2)
+                                    .foregroundStyle(iPhoneComplete ? .green : .secondary)
+                                Image(systemName: "ipad")
+                                    .font(.caption2)
+                                    .foregroundStyle(iPadComplete ? .green : .secondary)
+                            }
+                        }
+                    }
                 } else {
                     Image(systemName: "circle")
                         .font(.title2)
@@ -120,12 +154,11 @@ struct GeneratingView: View {
 
             Spacer()
 
-            if !appState.isLoading && appState.generationProgress >= 1.0 {
-                Button("Continue to Compose") {
-                    appState.currentStep = .composing
-                    #if canImport(AppKit)
-                    appState.composeAll()
-                    #endif
+            // Allow advancing when generation is done or has partial results
+            if !appState.isLoading && !appState.backgroundImages.isEmpty {
+                Button(appState.generationProgress >= 1.0 ? "Continue to Export" : "Continue with \(appState.backgroundImages.count) screenshots") {
+                    // Skip composing step — Gemini output is used directly as final images
+                    appState.currentStep = .export
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)

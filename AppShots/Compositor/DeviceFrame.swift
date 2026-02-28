@@ -56,10 +56,12 @@ struct DeviceFrame {
     /// Used when no asset is available in the bundle.
     func generateClayFrame(
         size: CGSize,
+        deviceType: DeviceType = .iPhone,
         color: CGColor = CGColor(gray: 0.15, alpha: 1.0),
         cornerRadius: CGFloat? = nil
     ) -> NSImage {
-        let radius = cornerRadius ?? size.width * 0.08
+        let defaultRadius: CGFloat = deviceType == .iPad ? size.width * 0.04 : size.width * 0.08
+        let radius = cornerRadius ?? defaultRadius
         let width = Int(size.width)
         let height = Int(size.height)
 
@@ -118,10 +120,12 @@ struct DeviceFrame {
     /// Generate a minimal outline frame.
     func generateMinimalFrame(
         size: CGSize,
+        deviceType: DeviceType = .iPhone,
         strokeColor: CGColor = CGColor(gray: 0.3, alpha: 0.8),
         cornerRadius: CGFloat? = nil
     ) -> NSImage {
-        let radius = cornerRadius ?? size.width * 0.08
+        let defaultRadius: CGFloat = deviceType == .iPad ? size.width * 0.04 : size.width * 0.08
+        let radius = cornerRadius ?? defaultRadius
         let width = Int(size.width)
         let height = Int(size.height)
 
@@ -164,16 +168,22 @@ struct DeviceFrame {
     func screenInset(for deviceSize: DeviceSize, frameStyle: FrameStyle) -> CGRect {
         let w = CGFloat(deviceSize.width)
         let h = CGFloat(deviceSize.height)
+        let isIPad = deviceSize.deviceType == .iPad
 
         switch frameStyle {
         case .realistic:
-            // Realistic frames have thicker bezels
+            if isIPad {
+                // iPad has thinner bezels relative to screen size
+                let insetX = w * 0.02
+                let insetY = h * 0.015
+                return CGRect(x: insetX, y: insetY, width: w - 2 * insetX, height: h - 2 * insetY)
+            }
             let insetX = w * 0.03
             let insetY = h * 0.015
             return CGRect(x: insetX, y: insetY, width: w - 2 * insetX, height: h - 2 * insetY)
 
         case .clay:
-            let inset = w * 0.025
+            let inset = isIPad ? w * 0.02 : w * 0.025
             return CGRect(x: inset, y: inset, width: w - 2 * inset, height: h - 2 * inset)
 
         case .minimal:

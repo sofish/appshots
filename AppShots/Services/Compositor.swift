@@ -54,64 +54,36 @@ struct Compositor {
         }
 
         let canvasSize = CGSize(width: width, height: height)
-        let layout = layoutEngine.calculate(
-            tilt: input.config.tilt,
-            position: input.config.position,
-            fullBleed: input.config.fullBleed,
-            canvasSize: canvasSize,
-            hasSubheading: !input.config.subheading.isEmpty
-        )
-
-        if layout.screenshotFillsCanvas {
-            drawScreenshotAsBackground(context: context, screenshot: input.screenshot, size: canvasSize)
-            if let scrimRect = layout.gradientScrimRect {
-                drawGradientScrim(context: context, rect: scrimRect)
-            }
-            textRenderer.drawHeadingWithShadow(
-                context: context,
-                text: input.config.heading,
-                rect: layout.headingRect,
-                color: hexToColor(input.colors.text),
-                fontSize: layout.headingFontSize
+        let layout: LayoutEngine.LayoutResult
+        if input.targetSize.deviceType == .iPad, let iPadCfg = input.config.iPadConfig {
+            layout = layoutEngine.calculateIPadLayout(
+                layoutType: iPadCfg.layoutType,
+                tilt: input.config.tilt,
+                canvasSize: canvasSize,
+                hasSubheading: !input.config.subheading.isEmpty,
+                orientation: iPadCfg.orientation
             )
-            if !input.config.subheading.isEmpty {
-                textRenderer.drawSubheading(
-                    context: context,
-                    text: input.config.subheading,
-                    rect: layout.subheadingRect,
-                    color: hexToColor(input.colors.subtext),
-                    fontSize: layout.subheadingFontSize
-                )
-            }
         } else {
-            drawBackground(context: context, image: input.backgroundImage, size: canvasSize)
-
-            drawDevice(
-                context: context,
-                screenshot: input.screenshot,
-                deviceRect: layout.deviceRect,
-                screenInset: layout.screenInset,
-                rotation: layout.rotationAngle,
-                targetSize: input.targetSize
+            layout = layoutEngine.calculate(
+                tilt: input.config.tilt,
+                position: input.config.position,
+                fullBleed: input.config.fullBleed,
+                canvasSize: canvasSize,
+                hasSubheading: !input.config.subheading.isEmpty,
+                deviceType: input.targetSize.deviceType
             )
-
-            textRenderer.drawHeading(
-                context: context,
-                text: input.config.heading,
-                rect: layout.headingRect,
-                color: hexToColor(input.colors.text),
-                fontSize: layout.headingFontSize
-            )
-            if !input.config.subheading.isEmpty {
-                textRenderer.drawSubheading(
-                    context: context,
-                    text: input.config.subheading,
-                    rect: layout.subheadingRect,
-                    color: hexToColor(input.colors.subtext),
-                    fontSize: layout.subheadingFontSize
-                )
-            }
         }
+
+        renderLayout(
+            context: context,
+            layout: layout,
+            config: input.config,
+            screenshot: input.screenshot,
+            colors: input.colors,
+            canvasSize: canvasSize,
+            targetSize: input.targetSize,
+            backgroundImage: input.backgroundImage
+        )
 
         guard let cgImage = context.makeImage() else {
             throw CompositorError.imageRenderFailed
@@ -144,14 +116,57 @@ struct Compositor {
         }
 
         let canvasSize = CGSize(width: width, height: height)
-        let layout = layoutEngine.calculate(
-            tilt: config.tilt,
-            position: config.position,
-            fullBleed: config.fullBleed,
+        let layout: LayoutEngine.LayoutResult
+        if targetSize.deviceType == .iPad, let iPadCfg = config.iPadConfig {
+            layout = layoutEngine.calculateIPadLayout(
+                layoutType: iPadCfg.layoutType,
+                tilt: config.tilt,
+                canvasSize: canvasSize,
+                hasSubheading: !config.subheading.isEmpty,
+                orientation: iPadCfg.orientation
+            )
+        } else {
+            layout = layoutEngine.calculate(
+                tilt: config.tilt,
+                position: config.position,
+                fullBleed: config.fullBleed,
+                canvasSize: canvasSize,
+                hasSubheading: !config.subheading.isEmpty,
+                deviceType: targetSize.deviceType
+            )
+        }
+
+        renderLayout(
+            context: context,
+            layout: layout,
+            config: config,
+            screenshot: screenshot,
+            colors: colors,
             canvasSize: canvasSize,
-            hasSubheading: !config.subheading.isEmpty
+            targetSize: targetSize,
+            backgroundImage: nil
         )
 
+        guard let cgImage = context.makeImage() else {
+            throw CompositorError.imageRenderFailed
+        }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
+    }
+
+    // MARK: - Unified Render Layout
+
+    /// Renders a layout to context, handling all device types and layout modes.
+    private func renderLayout(
+        context: CGContext,
+        layout: LayoutEngine.LayoutResult,
+        config: ScreenConfig,
+        screenshot: NSImage,
+        colors: ResolvedColors,
+        canvasSize: CGSize,
+        targetSize: DeviceSize,
+        backgroundImage: NSImage?
+    ) {
         if layout.screenshotFillsCanvas {
             drawScreenshotAsBackground(context: context, screenshot: screenshot, size: canvasSize)
             if let scrimRect = layout.gradientScrimRect {
@@ -174,22 +189,39 @@ struct Compositor {
                 )
             }
         } else {
-            drawGradientBackground(
-                context: context,
-                size: canvasSize,
-                primaryColor: hexToColor(colors.primary),
-                accentColor: hexToColor(colors.accent)
-            )
+            // Draw background
+            if let bgImage = backgroundImage {
+                drawBackground(context: context, image: bgImage, size: canvasSize)
+            } else {
+                drawGradientBackground(
+                    context: context,
+                    size: canvasSize,
+                    primaryColor: hexToColor(colors.primary),
+                    accentColor: hexToColor(colors.accent)
+                )
+            }
 
-            drawDevice(
-                context: context,
-                screenshot: screenshot,
-                deviceRect: layout.deviceRect,
-                screenInset: layout.screenInset,
-                rotation: layout.rotationAngle,
-                targetSize: targetSize
-            )
+            // Draw device (frameless, iPad, or iPhone)
+            if layout.isFrameless {
+                drawFramelessDevice(
+                    context: context,
+                    screenshot: screenshot,
+                    deviceRect: layout.deviceRect,
+                    screenInset: layout.screenInset,
+                    rotation: layout.rotationAngle
+                )
+            } else {
+                drawDevice(
+                    context: context,
+                    screenshot: screenshot,
+                    deviceRect: layout.deviceRect,
+                    screenInset: layout.screenInset,
+                    rotation: layout.rotationAngle,
+                    targetSize: targetSize
+                )
+            }
 
+            // Draw text
             textRenderer.drawHeading(
                 context: context,
                 text: config.heading,
@@ -207,12 +239,6 @@ struct Compositor {
                 )
             }
         }
-
-        guard let cgImage = context.makeImage() else {
-            throw CompositorError.imageRenderFailed
-        }
-
-        return NSImage(cgImage: cgImage, size: NSSize(width: width, height: height))
     }
 
     // MARK: - Drawing Helpers
@@ -273,53 +299,104 @@ struct Compositor {
             width: screenInset.width,
             height: screenInset.height
         )
-        let screenCornerRadius = deviceRect.width * 0.06
-        let bodyCornerRadius = deviceRect.width * 0.08
+        let isIPad = targetSize.deviceType == .iPad
+        let screenCornerRadius = deviceRect.width * (isIPad ? 0.045 : 0.06)
+        let bodyCornerRadius = deviceRect.width * (isIPad ? 0.055 : 0.08)
 
         // 1. Draw device body (solid dark bezel)
         if let frameImage = deviceFrame.loadFrame(for: targetSize)?.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             context.draw(frameImage, in: deviceRect)
+        } else if isIPad {
+            drawIPadFrame(context: context, deviceRect: deviceRect, screenRect: screenRect,
+                          bodyRadius: bodyCornerRadius, screenRadius: screenCornerRadius)
         } else {
             drawIPhoneFrame(context: context, deviceRect: deviceRect, screenRect: screenRect,
                             bodyRadius: bodyCornerRadius, screenRadius: screenCornerRadius)
         }
 
         // 2. Draw screenshot inside the screen area (aspect-fill)
-        if let cgScreenshot = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            context.saveGState()
-            let clipPath = CGPath(roundedRect: screenRect,
-                                  cornerWidth: screenCornerRadius, cornerHeight: screenCornerRadius,
-                                  transform: nil)
-            context.addPath(clipPath)
-            context.clip()
+        drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: screenRect,
+                             cornerRadius: screenCornerRadius)
 
-            let imgW = CGFloat(cgScreenshot.width)
-            let imgH = CGFloat(cgScreenshot.height)
-            let imgAspect = imgW / imgH
-            let screenAspect = screenRect.width / screenRect.height
-            var drawRect: CGRect
-            if imgAspect > screenAspect {
-                let drawHeight = screenRect.height
-                let drawWidth = drawHeight * imgAspect
-                drawRect = CGRect(x: screenRect.minX + (screenRect.width - drawWidth) / 2,
-                                  y: screenRect.minY,
-                                  width: drawWidth, height: drawHeight)
-            } else {
-                let drawWidth = screenRect.width
-                let drawHeight = drawWidth / imgAspect
-                drawRect = CGRect(x: screenRect.minX,
-                                  y: screenRect.minY + (screenRect.height - drawHeight) / 2,
-                                  width: drawWidth, height: drawHeight)
-            }
-            context.draw(cgScreenshot, in: drawRect)
-            context.restoreGState()
-        }
-
-        // 3. Draw Dynamic Island on top of screenshot
-        if deviceFrame.loadFrame(for: targetSize) == nil {
+        // 3. Draw Dynamic Island (iPhone only)
+        if !isIPad && deviceFrame.loadFrame(for: targetSize) == nil {
             drawDynamicIsland(context: context, screenRect: screenRect)
         }
 
+        // 4. Draw home indicator (iPad only, Face ID models)
+        if isIPad && deviceFrame.loadFrame(for: targetSize) == nil {
+            drawHomeIndicator(context: context, screenRect: screenRect)
+        }
+
+        context.restoreGState()
+    }
+
+    /// Draw a frameless floating UI — rounded corners + drop shadow, no device bezel.
+    private func drawFramelessDevice(
+        context: CGContext,
+        screenshot: NSImage,
+        deviceRect: CGRect,
+        screenInset: CGRect,
+        rotation: CGFloat
+    ) {
+        context.saveGState()
+
+        if rotation != 0 {
+            let centerX = deviceRect.midX
+            let centerY = deviceRect.midY
+            context.translateBy(x: centerX, y: centerY)
+            context.rotate(by: rotation * .pi / 180)
+            context.translateBy(x: -centerX, y: -centerY)
+        }
+
+        let cornerRadius = deviceRect.width * 0.03
+
+        // Drop shadow
+        context.setShadow(offset: CGSize(width: 0, height: -8), blur: 30,
+                          color: CGColor(gray: 0, alpha: 0.35))
+
+        // Draw the screenshot directly with rounded corners
+        drawScreenshotInRect(context: context, screenshot: screenshot, screenRect: deviceRect,
+                             cornerRadius: cornerRadius)
+
+        context.restoreGState()
+    }
+
+    /// Shared helper to draw a screenshot into a rounded rect with aspect-fill.
+    private func drawScreenshotInRect(
+        context: CGContext,
+        screenshot: NSImage,
+        screenRect: CGRect,
+        cornerRadius: CGFloat
+    ) {
+        guard let cgScreenshot = screenshot.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        context.saveGState()
+        let clipPath = CGPath(roundedRect: screenRect,
+                              cornerWidth: cornerRadius, cornerHeight: cornerRadius,
+                              transform: nil)
+        context.addPath(clipPath)
+        context.clip()
+
+        let imgW = CGFloat(cgScreenshot.width)
+        let imgH = CGFloat(cgScreenshot.height)
+        let imgAspect = imgW / imgH
+        let screenAspect = screenRect.width / screenRect.height
+        var drawRect: CGRect
+        if imgAspect > screenAspect {
+            let drawHeight = screenRect.height
+            let drawWidth = drawHeight * imgAspect
+            drawRect = CGRect(x: screenRect.minX + (screenRect.width - drawWidth) / 2,
+                              y: screenRect.minY,
+                              width: drawWidth, height: drawHeight)
+        } else {
+            let drawWidth = screenRect.width
+            let drawHeight = drawWidth / imgAspect
+            drawRect = CGRect(x: screenRect.minX,
+                              y: screenRect.minY + (screenRect.height - drawHeight) / 2,
+                              width: drawWidth, height: drawHeight)
+        }
+        context.draw(cgScreenshot, in: drawRect)
         context.restoreGState()
     }
 
@@ -368,6 +445,58 @@ struct Compositor {
             context.setFillColor(CGColor(gray: 0.15, alpha: 0.9))
             context.fill(volRect)
         }
+    }
+
+    /// Draw iPad device frame — thinner bezels, no side buttons, less rounded corners.
+    private func drawIPadFrame(
+        context: CGContext,
+        deviceRect: CGRect,
+        screenRect: CGRect,
+        bodyRadius: CGFloat,
+        screenRadius: CGFloat
+    ) {
+        // Device body
+        let bodyPath = CGPath(roundedRect: deviceRect,
+                              cornerWidth: bodyRadius, cornerHeight: bodyRadius,
+                              transform: nil)
+        context.setFillColor(CGColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1.0))
+        context.addPath(bodyPath)
+        context.fillPath()
+
+        // Subtle border highlight
+        context.setStrokeColor(CGColor(gray: 0.25, alpha: 0.6))
+        context.setLineWidth(1.5)
+        context.addPath(bodyPath)
+        context.strokePath()
+
+        // Screen groove
+        let grooveRect = screenRect.insetBy(dx: -1.5, dy: -1.5)
+        let groovePath = CGPath(roundedRect: grooveRect,
+                                cornerWidth: screenRadius + 1.5, cornerHeight: screenRadius + 1.5,
+                                transform: nil)
+        context.setStrokeColor(CGColor(gray: 0.05, alpha: 0.8))
+        context.setLineWidth(1)
+        context.addPath(groovePath)
+        context.strokePath()
+
+        // No side buttons for iPad — cleaner silhouette
+    }
+
+    /// Draw iPad home indicator bar at the bottom of the screen.
+    /// Note: Core Graphics origin is bottom-left, so minY = visual bottom.
+    private func drawHomeIndicator(context: CGContext, screenRect: CGRect) {
+        let indicatorWidth = screenRect.width * 0.30
+        let indicatorHeight = screenRect.width * 0.005
+        let indicatorX = screenRect.midX - indicatorWidth / 2
+        let indicatorY = screenRect.minY + screenRect.height * 0.008
+
+        let indicatorRect = CGRect(x: indicatorX, y: indicatorY, width: indicatorWidth, height: indicatorHeight)
+        let indicatorPath = CGPath(roundedRect: indicatorRect,
+                                   cornerWidth: indicatorHeight / 2, cornerHeight: indicatorHeight / 2,
+                                   transform: nil)
+        context.setFillColor(CGColor(gray: 0.4, alpha: 0.6))
+        context.addPath(indicatorPath)
+        context.fillPath()
     }
 
     private func drawDynamicIsland(context: CGContext, screenRect: CGRect) {
