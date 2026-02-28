@@ -13,28 +13,10 @@ struct ExportView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             exportOptions
             Divider()
             footer
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Export")
-                    .font(.title2.bold())
-                Text("Configure export settings and save your App Store screenshots.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
     }
 
     /// iPad images are always composed at portrait canvas dimensions.
@@ -71,7 +53,8 @@ struct ExportView: View {
                     exportProgress
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical)
         }
     }
 
@@ -347,7 +330,9 @@ struct ExportView: View {
             .disabled(appState.selectedSizes.isEmpty || appState.isLoading)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     // MARK: - Actions

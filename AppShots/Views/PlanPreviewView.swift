@@ -29,14 +29,6 @@ struct PlanPreviewView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Screenshot Plan")
-                    .font(.title2.bold())
-                Text("Review and edit your screenshot plan. Changes here are free — no generation cost.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             if !appState.screenPlan.screens.isEmpty {
@@ -68,7 +60,9 @@ struct PlanPreviewView: View {
                 }
             }
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - Loading
@@ -121,7 +115,8 @@ struct PlanPreviewView: View {
                     )
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical)
         }
     }
 
@@ -165,7 +160,9 @@ struct PlanPreviewView: View {
             .disabled(appState.screenPlan.screens.isEmpty || appState.isLoading)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 }
 

@@ -29,14 +29,6 @@ struct CompositePreviewView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Preview")
-                    .font(.title2.bold())
-                Text("Review your composed screenshots. Quick adjustments are instant.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             #if canImport(AppKit)
@@ -60,7 +52,9 @@ struct CompositePreviewView: View {
                 .background(Capsule().fill(.quaternary))
             #endif
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - Loading
@@ -87,6 +81,7 @@ struct CompositePreviewView: View {
             sidePanel
                 .frame(width: 260)
         }
+        .padding(.horizontal, 20)
     }
 
     #if canImport(AppKit)
@@ -295,6 +290,8 @@ struct CompositePreviewView: View {
             .controlSize(.large)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 }

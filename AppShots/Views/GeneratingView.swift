@@ -7,28 +7,11 @@ struct GeneratingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider()
             progressContent
+                .padding(.horizontal, 20)
             Divider()
             footer
         }
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Generating Backgrounds")
-                    .font(.title2.bold())
-                Text("AI is creating custom backgrounds for each screenshot.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
     }
 
     // MARK: - Progress Content
@@ -164,6 +147,8 @@ struct GeneratingView: View {
                 .controlSize(.large)
             }
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 }

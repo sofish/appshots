@@ -30,14 +30,6 @@ struct ScreenshotGalleryView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Screenshots")
-                    .font(.title2.bold())
-                Text("Add 3-6 app screenshots. Drag to reorder. Order matches your Markdown features.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             Text("\(appState.screenshots.count) screenshot\(appState.screenshots.count == 1 ? "" : "s")")
@@ -47,7 +39,9 @@ struct ScreenshotGalleryView: View {
                 .padding(.vertical, 6)
                 .background(Capsule().fill(.quaternary))
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - Main Content
@@ -56,6 +50,7 @@ struct ScreenshotGalleryView: View {
     private var mainContent: some View {
         if appState.screenshots.isEmpty {
             dropZone
+                .padding(.horizontal, 20)
         } else {
             screenshotGrid
         }
@@ -136,7 +131,8 @@ struct ScreenshotGalleryView: View {
                 // Size selection
                 sizeSelector
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.vertical)
         }
     }
 
@@ -234,7 +230,9 @@ struct ScreenshotGalleryView: View {
             .disabled(appState.screenshots.isEmpty)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     // MARK: - Actions

@@ -33,6 +33,17 @@ final class AppState: ObservableObject {
             }
         }
 
+        var subtitle: String {
+            switch self {
+            case .markdown: return "Describe your app"
+            case .screenshots: return "Upload screenshots"
+            case .planPreview: return "Review & edit"
+            case .generating: return "AI composition"
+            case .composing: return "Quick adjustments"
+            case .export: return "Save to disk"
+            }
+        }
+
         var iconName: String {
             switch self {
             case .markdown: return "doc.text"

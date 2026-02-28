@@ -29,6 +29,7 @@ struct MarkdownInputView: View {
                 previewPane
                     .frame(minWidth: 280)
             }
+            .padding(.horizontal, 20)
 
             Divider()
 
@@ -60,14 +61,6 @@ struct MarkdownInputView: View {
 
     private var header: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("App Description")
-                    .font(.title2.bold())
-                Text("Paste your structured Markdown or use the prompt template to generate one.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
             Spacer()
 
             // Copy Prompt button
@@ -94,7 +87,9 @@ struct MarkdownInputView: View {
             }
             .buttonStyle(.bordered)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - Editor Pane
@@ -239,7 +234,9 @@ struct MarkdownInputView: View {
             .disabled(appState.markdownText.isEmpty)
             .keyboardShortcut(.return, modifiers: .command)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     // MARK: - Actions
