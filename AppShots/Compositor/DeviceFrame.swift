@@ -292,7 +292,6 @@ struct DeviceFrame {
         context.saveGState()
         context.setStrokeColor(CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.2))
         context.setLineWidth(1.0)
-        let topHighlightY = bodyRect.maxY - radius
         context.move(to: CGPoint(x: bodyRect.minX + radius, y: bodyRect.maxY))
         context.addLine(to: CGPoint(x: bodyRect.maxX - radius, y: bodyRect.maxY))
         context.strokePath()

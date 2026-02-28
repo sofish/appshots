@@ -99,6 +99,12 @@ import Observation
         !markdownText.isEmpty || !screenshots.isEmpty || !screenPlan.screens.isEmpty
     }
 
+    /// App name for export filenames — falls back to descriptor.name if screenPlan.appName is empty.
+    var exportAppName: String {
+        let name = screenPlan.appName.isEmpty ? descriptor.name : screenPlan.appName
+        return name.isEmpty ? "AppShots" : name
+    }
+
     // MARK: - Services
 
     private let parser = MarkdownParser()
@@ -112,6 +118,7 @@ import Observation
     // MARK: - Generation Task
 
     private var generationTask: Task<Void, Never>?
+    private var autoAdvanceTask: Task<Void, Never>?
 
     // MARK: - Settings (persisted)
 
@@ -240,9 +247,8 @@ import Observation
             return
         }
 
-        // Validate descriptor has at least 1 feature
-        guard !descriptor.features.isEmpty else {
-            showError("Your app description needs at least one feature. Please go back and add features to your Markdown.")
+        guard !descriptor.name.isEmpty else {
+            showError("Your app description needs at least an app name. Please go back and check your Markdown.")
             return
         }
 
@@ -284,6 +290,8 @@ import Observation
     func cancelGeneration() {
         generationTask?.cancel()
         generationTask = nil
+        autoAdvanceTask?.cancel()
+        autoAdvanceTask = nil
         isLoading = false
         loadingMessage = "Generation cancelled."
     }
@@ -380,9 +388,11 @@ import Observation
 
             // Auto-advance to export with a short delay for smoother transition
             if !backgroundImages.isEmpty {
-                Task { @MainActor in
+                autoAdvanceTask?.cancel()
+                autoAdvanceTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 300_000_000)
-                    if !self.backgroundImages.isEmpty {
+                    guard !Task.isCancelled else { return }
+                    if !self.backgroundImages.isEmpty && self.currentStep == .generating {
                         self.currentStep = .export
                     }
                 }
@@ -501,11 +511,13 @@ import Observation
                         format: exportConfig.format,
                         jpegQuality: exportConfig.jpegQuality
                     )
+                    let headings = screenPlan.screens.sorted(by: { $0.index < $1.index }).map { $0.heading as String? }
                     let iPhoneResults = try exporter.exportAll(
                         images: composedImages,
-                        appName: screenPlan.appName,
+                        appName: exportAppName,
                         config: iPhoneConfig,
-                        outputDirectory: directory
+                        outputDirectory: directory,
+                        screenHeadings: headings
                     ) { completed, total in
                         Task { @MainActor in
                             self.loadingMessage = "Exporting iPhone \(completed)/\(total)"
@@ -521,11 +533,13 @@ import Observation
                         format: exportConfig.format,
                         jpegQuality: exportConfig.jpegQuality
                     )
+                    let iPadHeadings = screenPlan.screens.sorted(by: { $0.index < $1.index }).map { $0.heading as String? }
                     let iPadResults = try exporter.exportAll(
                         images: iPadComposedImages,
-                        appName: screenPlan.appName,
+                        appName: exportAppName,
                         config: iPadConfig,
-                        outputDirectory: directory
+                        outputDirectory: directory,
+                        screenHeadings: iPadHeadings
                     ) { completed, total in
                         Task { @MainActor in
                             self.loadingMessage = "Exporting iPad \(completed)/\(total)"
@@ -614,9 +628,9 @@ import Observation
             do {
                 let data = try await backgroundGenerator.generateSingle(prompt: prompt, screenshotData: screenshotData)
                 backgroundImages[screen.index] = data
-                if let image = NSImage(data: data), screenIndex < composedImages.count {
-                    composedImages[screenIndex] = image
-                }
+                // Recompose through the Compositor so the new background is properly
+                // layered with the device frame, screenshot, and text overlays.
+                recomposeSingle(screenIndex: screenIndex)
             } catch {
                 showError(error.localizedDescription)
             }
@@ -627,6 +641,8 @@ import Observation
 
     func goToStep(_ step: Step) {
         guard step.rawValue <= currentStep.rawValue || canAdvanceToStep(step) else { return }
+        autoAdvanceTask?.cancel()
+        autoAdvanceTask = nil
         currentStep = step
         saveProgress()
     }
@@ -640,31 +656,51 @@ import Observation
     }
 
     func resetToStep(_ step: Step) {
+        // Cancel any in-flight generation
+        generationTask?.cancel()
+        generationTask = nil
+        autoAdvanceTask?.cancel()
+        autoAdvanceTask = nil
+        isLoading = false
+
         currentStep = step
         switch step {
         case .markdown:
+            descriptor = .empty
             screenshots.removeAll()
             screenPlan = .empty
+            imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
+            exportResults.removeAll()
+            generationProgress = 0
         case .screenshots:
             screenPlan = .empty
+            imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
+            exportResults.removeAll()
+            generationProgress = 0
         case .planPreview:
+            imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
+            exportResults.removeAll()
+            generationProgress = 0
         case .generating:
             composedImages.removeAll()
             iPadComposedImages.removeAll()
-        default:
-            break
+            exportResults.removeAll()
+        case .composing:
+            exportResults.removeAll()
+        case .export:
+            exportResults.removeAll()
         }
         saveProgress()
     }
@@ -728,15 +764,13 @@ struct ScreenshotItem: Identifiable, Equatable {
     let id: UUID
     let imageData: Data
     let fileName: String
-
-    var nsImage: NSImage {
-        NSImage(data: imageData) ?? NSImage()
-    }
+    let nsImage: NSImage
 
     init(id: UUID = UUID(), imageData: Data, fileName: String = "screenshot.png") {
         self.id = id
         self.imageData = imageData
         self.fileName = fileName
+        self.nsImage = NSImage(data: imageData) ?? NSImage()
     }
 
     static func == (lhs: ScreenshotItem, rhs: ScreenshotItem) -> Bool {
