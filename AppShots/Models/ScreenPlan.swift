@@ -4,17 +4,17 @@ import Foundation
 
 enum iPadLayoutType: String, Codable, CaseIterable, Identifiable {
     // Tier 1 — ship first
-    case standard           // Layout 1: centered iPad device frame
-    case angled             // Layout 2: tilted 3D perspective
-    case frameless          // Layout 3: floating UI, rounded corners + shadow, no device chrome
-    case headlineDominant   // Layout 5: large text area (45%), smaller device below
-    case uiForward          // Layout 7: full bleed, minimal/no text
+    case standard                               // Layout 1: centered iPad device frame
+    case angled                                  // Layout 2: tilted 3D perspective
+    case frameless                               // Layout 3: floating UI, rounded corners + shadow, no device chrome
+    case headlineDominant = "headline_dominant"   // Layout 5: large text area (45%), smaller device below
+    case uiForward = "ui_forward"                // Layout 7: full bleed, minimal/no text
 
     // Tier 2 — new compositor capabilities
-    case multiOrientation   // Layout 4: portrait + landscape devices
-    case darkLightDual      // Layout 12: split dark/light mode
-    case splitPanel         // Layout 14: 2-3 panels showing different views
-    case beforeAfter        // Layout 15: diagonal split transformation
+    case multiOrientation = "multi_orientation"  // Layout 4: portrait + landscape devices
+    case darkLightDual = "dark_light_dual"       // Layout 12: split dark/light mode
+    case splitPanel = "split_panel"              // Layout 14: 2-3 panels showing different views
+    case beforeAfter = "before_after"            // Layout 15: diagonal split transformation
 
     var id: String { rawValue }
 
