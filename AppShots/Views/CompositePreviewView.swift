@@ -7,6 +7,7 @@ struct CompositePreviewView: View {
     @EnvironmentObject var appState: AppState
     @State private var selectedScreenIndex: Int = 0
     @State private var showAdjustments = false
+    @State private var previewDeviceType: DeviceType = .iPhone
 
     var body: some View {
         VStack(spacing: 0) {
@@ -39,7 +40,19 @@ struct CompositePreviewView: View {
             Spacer()
 
             #if canImport(AppKit)
-            Text("\(appState.composedImages.count) screenshots")
+            if appState.generateIPad && !appState.iPadComposedImages.isEmpty {
+                Picker("Device", selection: $previewDeviceType) {
+                    Text("iPhone").tag(DeviceType.iPhone)
+                    Text("iPad").tag(DeviceType.iPad)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+                .onChange(of: previewDeviceType) { _, _ in
+                    selectedScreenIndex = 0
+                }
+            }
+
+            Text("\(currentImages.count) screenshots")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
@@ -76,13 +89,20 @@ struct CompositePreviewView: View {
         }
     }
 
+    #if canImport(AppKit)
+    /// Images for the currently selected device type.
+    private var currentImages: [NSImage] {
+        previewDeviceType == .iPad ? appState.iPadComposedImages : appState.composedImages
+    }
+    #endif
+
     // MARK: - Main Preview
 
     private var mainPreview: some View {
         VStack {
             #if canImport(AppKit)
-            if selectedScreenIndex < appState.composedImages.count {
-                let image = appState.composedImages[selectedScreenIndex]
+            if selectedScreenIndex < currentImages.count {
+                let image = currentImages[selectedScreenIndex]
                 ScrollView([.horizontal, .vertical]) {
                     Image(nsImage: image)
                         .resizable()
@@ -116,7 +136,7 @@ struct CompositePreviewView: View {
             ScrollView {
                 VStack(spacing: 8) {
                     #if canImport(AppKit)
-                    ForEach(Array(appState.composedImages.enumerated()), id: \.offset) { index, image in
+                    ForEach(Array(currentImages.enumerated()), id: \.offset) { index, image in
                         thumbnailCard(image: image, index: index)
                     }
                     #endif
@@ -218,7 +238,7 @@ struct CompositePreviewView: View {
             // Recompose button (instant, no LLM)
             Button("Recompose") {
                 #if canImport(AppKit)
-                appState.recomposeSingle(screenIndex: selectedScreenIndex)
+                appState.recomposeSingle(screenIndex: selectedScreenIndex, deviceType: previewDeviceType)
                 #endif
             }
             .buttonStyle(.bordered)

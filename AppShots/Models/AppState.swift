@@ -60,6 +60,13 @@ final class AppState: ObservableObject {
     @Published var exportConfig: ExportConfig = .default
     @Published var selectedSizes: Set<String> = Set(DeviceSize.defaultSizes.map(\.id))
 
+    // iPad state
+    @Published var generateIPad: Bool = false
+    @Published var iPadBackgroundImages: [Int: Data] = [:]
+    #if canImport(AppKit)
+    @Published var iPadComposedImages: [NSImage] = []
+    #endif
+
     // UI State
     @Published var isLoading = false
     @Published var loadingMessage = ""
@@ -152,7 +159,8 @@ final class AppState: ObservableObject {
                 let screenshotData = screenshots.map(\.imageData)
                 screenPlan = try await planGenerator.generate(
                     descriptor: descriptor,
-                    screenshotData: screenshotData
+                    screenshotData: screenshotData,
+                    includeIPad: generateIPad
                 )
                 isLoading = false
             } catch {
@@ -175,27 +183,62 @@ final class AppState: ObservableObject {
                 // Step A: Build prompts from plan data (no LLM call)
                 imagePrompts = promptTranslator.translate(plan: screenPlan)
 
+                // Build iPad prompts if iPad generation is enabled
+                var iPadPrompts: [ImagePrompt] = []
+                if generateIPad {
+                    iPadPrompts = promptTranslator.translateIPad(plan: screenPlan)
+                }
+
                 // Step B: Build screenshot data map (screenIndex → screenshot data)
                 var screenshotDataMap: [Int: Data] = [:]
                 for screen in screenPlan.screens {
                     if screen.screenshotMatch < screenshots.count {
-                        screenshotDataMap[screen.index] = screenshots[screen.screenshotMatch].imageData
+                        let ssData = screenshots[screen.screenshotMatch].imageData
+                        screenshotDataMap[screen.index] = ssData
+                        // iPad prompts use offset indices (index + 1000)
+                        if generateIPad {
+                            screenshotDataMap[screen.index + 1000] = ssData
+                        }
                     }
                 }
 
-                // Step C: Generate full compositions in parallel (Gemini with screenshots)
-                loadingMessage = "Generating screenshots..."
+                // Step C: Generate all compositions in parallel (iPhone + iPad simultaneously)
+                let allPrompts = imagePrompts + iPadPrompts
+                let total = Double(allPrompts.count)
+                let iPhoneCount = imagePrompts.count
+                let iPadCount = iPadPrompts.count
+
+                if generateIPad {
+                    loadingMessage = "Generating \(iPhoneCount) iPhone + \(iPadCount) iPad screenshots..."
+                } else {
+                    loadingMessage = "Generating screenshots..."
+                }
                 generationProgress = 0
 
-                let total = Double(imagePrompts.count)
-                backgroundImages = try await backgroundGenerator.generateAll(
-                    prompts: imagePrompts,
+                let allResults = try await backgroundGenerator.generateAll(
+                    prompts: allPrompts,
                     screenshotDataMap: screenshotDataMap
                 ) { [weak self] index, data in
                     Task { @MainActor in
-                        self?.backgroundImages[index] = data
-                        self?.generationProgress = Double(self?.backgroundImages.count ?? 0) / total
-                        self?.loadingMessage = "Generated screenshot \(self?.backgroundImages.count ?? 0)/\(Int(total))"
+                        // Route results: indices >= 1000 are iPad, < 1000 are iPhone
+                        if index >= 1000 {
+                            self?.iPadBackgroundImages[index - 1000] = data
+                        } else {
+                            self?.backgroundImages[index] = data
+                        }
+
+                        let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
+                        self?.generationProgress = Double(completed) / total
+                        self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
+                    }
+                }
+
+                // Route final results
+                for (index, data) in allResults {
+                    if index >= 1000 {
+                        iPadBackgroundImages[index - 1000] = data
+                    } else {
+                        backgroundImages[index] = data
                     }
                 }
 
@@ -204,6 +247,13 @@ final class AppState: ObservableObject {
                 composedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
                     guard let data = backgroundImages[screen.index] else { return nil }
                     return NSImage(data: data)
+                }
+
+                if generateIPad {
+                    iPadComposedImages = screenPlan.screens.sorted(by: { $0.index < $1.index }).compactMap { screen in
+                        guard let data = iPadBackgroundImages[screen.index] else { return nil }
+                        return NSImage(data: data)
+                    }
                 }
                 #endif
 
@@ -221,13 +271,14 @@ final class AppState: ObservableObject {
     // MARK: - Step 5: Compose (Core Graphics, no LLM)
 
     #if canImport(AppKit)
-    func composeAll() {
+    func composeAll(deviceType: DeviceType = .iPhone) {
         Task {
             isLoading = true
-            loadingMessage = "Compositing screenshots..."
+            loadingMessage = "Compositing \(deviceType.displayName) screenshots..."
 
-            composedImages = []
-            let targetSize = DeviceSize.iPhone6_7
+            let targetSize = deviceType.defaultSize
+            let bgImages = deviceType == .iPad ? iPadBackgroundImages : backgroundImages
+            var results: [NSImage] = []
 
             for screen in screenPlan.screens {
                 guard screen.screenshotMatch < screenshots.count else { continue }
@@ -236,7 +287,7 @@ final class AppState: ObservableObject {
 
                 do {
                     let composed: NSImage
-                    if let bgData = backgroundImages[screen.index],
+                    if let bgData = bgImages[screen.index],
                        let bgImage = NSImage(data: bgData) {
                         composed = try compositor.compose(input: .init(
                             config: screen,
@@ -253,14 +304,20 @@ final class AppState: ObservableObject {
                             targetSize: targetSize
                         )
                     }
-                    composedImages.append(composed)
+                    results.append(composed)
                 } catch {
                     showError("Failed to compose screen \(screen.index): \(error.localizedDescription)")
                 }
             }
 
+            if deviceType == .iPad {
+                iPadComposedImages = results
+            } else {
+                composedImages = results
+            }
+
             isLoading = false
-            if !composedImages.isEmpty {
+            if !results.isEmpty {
                 currentStep = .export
             }
         }
@@ -274,25 +331,53 @@ final class AppState: ObservableObject {
             loadingMessage = "Exporting..."
 
             do {
-                let sizes = DeviceSize.allSizes.filter { selectedSizes.contains($0.id) }
-                let config = ExportConfig(
-                    sizes: sizes,
-                    format: exportConfig.format,
-                    jpegQuality: exportConfig.jpegQuality
-                )
+                let allSelectedSizes = DeviceSize.allSizes.filter { selectedSizes.contains($0.id) }
+                let iPhoneSizes = allSelectedSizes.filter { $0.deviceType == .iPhone }
+                let iPadSizes = allSelectedSizes.filter { $0.deviceType == .iPad }
 
-                exportResults = try exporter.exportAll(
-                    images: composedImages,
-                    appName: screenPlan.appName,
-                    config: config,
-                    outputDirectory: directory
-                ) { completed, total in
-                    Task { @MainActor in
-                        self.generationProgress = Double(completed) / Double(total)
-                        self.loadingMessage = "Exported \(completed)/\(total)"
+                var allResults: [Exporter.ExportResult] = []
+
+                // Export iPhone images to iPhone sizes
+                if !iPhoneSizes.isEmpty && !composedImages.isEmpty {
+                    let iPhoneConfig = ExportConfig(
+                        sizes: iPhoneSizes,
+                        format: exportConfig.format,
+                        jpegQuality: exportConfig.jpegQuality
+                    )
+                    let iPhoneResults = try exporter.exportAll(
+                        images: composedImages,
+                        appName: screenPlan.appName,
+                        config: iPhoneConfig,
+                        outputDirectory: directory
+                    ) { completed, total in
+                        Task { @MainActor in
+                            self.loadingMessage = "Exporting iPhone \(completed)/\(total)"
+                        }
                     }
+                    allResults.append(contentsOf: iPhoneResults)
                 }
 
+                // Export iPad images to iPad sizes
+                if !iPadSizes.isEmpty && !iPadComposedImages.isEmpty {
+                    let iPadConfig = ExportConfig(
+                        sizes: iPadSizes,
+                        format: exportConfig.format,
+                        jpegQuality: exportConfig.jpegQuality
+                    )
+                    let iPadResults = try exporter.exportAll(
+                        images: iPadComposedImages,
+                        appName: screenPlan.appName,
+                        config: iPadConfig,
+                        outputDirectory: directory
+                    ) { completed, total in
+                        Task { @MainActor in
+                            self.loadingMessage = "Exporting iPad \(completed)/\(total)"
+                        }
+                    }
+                    allResults.append(contentsOf: iPadResults)
+                }
+
+                exportResults = allResults
                 isLoading = false
             } catch {
                 isLoading = false
@@ -305,17 +390,18 @@ final class AppState: ObservableObject {
     // MARK: - Recompose Single Screen
 
     #if canImport(AppKit)
-    func recomposeSingle(screenIndex: Int) {
+    func recomposeSingle(screenIndex: Int, deviceType: DeviceType = .iPhone) {
         guard screenIndex < screenPlan.screens.count else { return }
         let screen = screenPlan.screens[screenIndex]
         guard screen.screenshotMatch < screenshots.count else { return }
 
         let screenshot = screenshots[screen.screenshotMatch].nsImage
-        let targetSize = DeviceSize.iPhone6_7
+        let targetSize = deviceType.defaultSize
+        let bgImages = deviceType == .iPad ? iPadBackgroundImages : backgroundImages
 
         do {
             let composed: NSImage
-            if let bgData = backgroundImages[screen.index],
+            if let bgData = bgImages[screen.index],
                let bgImage = NSImage(data: bgData) {
                 composed = try compositor.compose(input: .init(
                     config: screen,
@@ -333,8 +419,14 @@ final class AppState: ObservableObject {
                 )
             }
 
-            if screenIndex < composedImages.count {
-                composedImages[screenIndex] = composed
+            if deviceType == .iPad {
+                if screenIndex < iPadComposedImages.count {
+                    iPadComposedImages[screenIndex] = composed
+                }
+            } else {
+                if screenIndex < composedImages.count {
+                    composedImages[screenIndex] = composed
+                }
             }
         } catch {
             showError("Recompose failed: \(error.localizedDescription)")

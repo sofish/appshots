@@ -14,10 +14,14 @@ struct PlanGenerator {
 
     func generate(
         descriptor: AppDescriptor,
-        screenshotData: [Data]
+        screenshotData: [Data],
+        includeIPad: Bool = false
     ) async throws -> ScreenPlan {
-        let systemPrompt = SystemPrompts.planGeneration
-        let userMessage = buildUserMessage(from: descriptor, screenshotCount: screenshotData.count)
+        var systemPrompt = SystemPrompts.planGeneration
+        if includeIPad {
+            systemPrompt += SystemPrompts.iPadPlanAddendum
+        }
+        let userMessage = buildUserMessage(from: descriptor, screenshotCount: screenshotData.count, includeIPad: includeIPad)
 
         let response: String
         if screenshotData.isEmpty {
@@ -40,7 +44,7 @@ struct PlanGenerator {
 
     // MARK: - Build user message from descriptor
 
-    private func buildUserMessage(from desc: AppDescriptor, screenshotCount: Int) -> String {
+    private func buildUserMessage(from desc: AppDescriptor, screenshotCount: Int, includeIPad: Bool = false) -> String {
         var parts: [String] = []
 
         parts.append("# \(desc.name)")
@@ -82,6 +86,14 @@ struct PlanGenerator {
         parts.append("Please generate a screenshot plan with exactly \(screenCount) screens.")
         if desc.features.isEmpty {
             parts.append("Since no explicit features were listed, derive \(screenCount) key selling points from the app description and core pitch.")
+        }
+
+        if includeIPad {
+            parts.append("")
+            parts.append("IMPORTANT: This app also targets iPad. For EACH screen, include an `ipad_config` object.")
+            parts.append("The iPad canvas is 2048×2732 (~3:4 ratio). Choose layouts that leverage the wider canvas.")
+            parts.append("Use varied iPad layout types: standard, angled, frameless, headline_dominant, ui_forward.")
+            parts.append("Write iPad-specific image_prompts that mention 'iPad' and describe the wider canvas composition.")
         }
 
         return parts.joined(separator: "\n")

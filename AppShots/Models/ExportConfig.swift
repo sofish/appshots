@@ -1,4 +1,37 @@
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+#endif
+
+// MARK: - Device Type
+
+enum DeviceType: String, Codable, CaseIterable, Identifiable {
+    case iPhone
+    case iPad
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .iPhone: return "iPhone"
+        case .iPad: return "iPad"
+        }
+    }
+
+    var aspectRatio: CGFloat {
+        switch self {
+        case .iPhone: return 19.5 / 9.0
+        case .iPad: return 2732.0 / 2048.0
+        }
+    }
+
+    var defaultSize: DeviceSize {
+        switch self {
+        case .iPhone: return .iPhone6_7
+        case .iPad: return .iPad13
+        }
+    }
+}
 
 // MARK: - Device Size
 
@@ -13,6 +46,10 @@ struct DeviceSize: Identifiable, Hashable {
 
     // The frame asset name in the bundle
     var frameAssetName: String { "frame_\(id)" }
+
+    var deviceType: DeviceType {
+        id.hasPrefix("ipad") ? .iPad : .iPhone
+    }
 }
 
 extension DeviceSize {

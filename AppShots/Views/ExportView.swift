@@ -84,9 +84,35 @@ struct ExportView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 6))
                                 .shadow(color: .black.opacity(0.1), radius: 3, y: 2)
 
-                            Text("Screen \(index + 1)")
-                                .font(.caption)
+                            HStack(spacing: 2) {
+                                Image(systemName: "iphone")
+                                    .font(.caption2)
+                                Text("Screen \(index + 1)")
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // iPad images
+                    if appState.generateIPad {
+                        ForEach(Array(appState.iPadComposedImages.enumerated()), id: \.offset) { index, image in
+                            VStack(spacing: 4) {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(height: 160)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .shadow(color: .black.opacity(0.1), radius: 3, y: 2)
+
+                                HStack(spacing: 2) {
+                                    Image(systemName: "ipad")
+                                        .font(.caption2)
+                                    Text("Screen \(index + 1)")
+                                        .font(.caption)
+                                }
                                 .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     #endif
@@ -143,9 +169,14 @@ struct ExportView: View {
                         Spacer()
 
                         #if canImport(AppKit)
-                        Text("\(appState.composedImages.count) files")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
+                        let fileCount = size.deviceType == .iPad
+                            ? appState.iPadComposedImages.count
+                            : appState.composedImages.count
+                        if fileCount > 0 {
+                            Text("\(fileCount) files")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
                         #endif
                     }
                     .padding(8)
@@ -205,12 +236,22 @@ struct ExportView: View {
                 }
             }
 
-            // File size estimate
+            // File count estimate
             #if canImport(AppKit)
-            let totalFiles = appState.composedImages.count * appState.selectedSizes.count
-            Text("Total: \(totalFiles) files will be exported")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            let iPhoneSizeCount = DeviceSize.allSizes.filter { $0.deviceType == .iPhone && appState.selectedSizes.contains($0.id) }.count
+            let iPadSizeCount = DeviceSize.allSizes.filter { $0.deviceType == .iPad && appState.selectedSizes.contains($0.id) }.count
+            let iPhoneFiles = appState.composedImages.count * iPhoneSizeCount
+            let iPadFiles = appState.iPadComposedImages.count * iPadSizeCount
+            let totalFiles = iPhoneFiles + iPadFiles
+            if iPadFiles > 0 {
+                Text("Total: \(totalFiles) files (\(iPhoneFiles) iPhone + \(iPadFiles) iPad)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Total: \(totalFiles) files will be exported")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             #endif
         }
     }

@@ -82,20 +82,34 @@ struct GeneratingView: View {
     }
 
     private func screenProgressCard(_ screen: ScreenConfig) -> some View {
-        let isComplete = appState.backgroundImages[screen.index] != nil
+        let iPhoneComplete = appState.backgroundImages[screen.index] != nil
+        let iPadComplete = appState.iPadBackgroundImages[screen.index] != nil
+        let allComplete = iPhoneComplete && (!appState.generateIPad || iPadComplete)
 
         return VStack(spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
+                    .fill(allComplete ? Color.green.opacity(0.1) : Color.gray.opacity(0.15))
                     .frame(height: 60)
 
-                if isComplete {
+                if allComplete {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.title2)
                         .foregroundStyle(.green)
                 } else if appState.isLoading {
-                    ProgressView()
+                    VStack(spacing: 4) {
+                        ProgressView()
+                        if appState.generateIPad {
+                            HStack(spacing: 4) {
+                                Image(systemName: "iphone")
+                                    .font(.caption2)
+                                    .foregroundStyle(iPhoneComplete ? .green : .secondary)
+                                Image(systemName: "ipad")
+                                    .font(.caption2)
+                                    .foregroundStyle(iPadComplete ? .green : .secondary)
+                            }
+                        }
+                    }
                 } else {
                     Image(systemName: "circle")
                         .font(.title2)

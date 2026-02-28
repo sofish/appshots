@@ -40,19 +40,30 @@ struct PlanPreviewView: View {
             Spacer()
 
             if !appState.screenPlan.screens.isEmpty {
-                // Global tone and color info
-                HStack(spacing: 8) {
-                    Label(appState.screenPlan.tone.displayName, systemImage: "paintpalette")
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(.quaternary))
+                HStack(spacing: 12) {
+                    // iPad toggle
+                    Toggle(isOn: $appState.generateIPad) {
+                        Label("iPad", systemImage: "ipad")
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
 
-                    // Color swatches
-                    HStack(spacing: 4) {
-                        ColorSwatch(hex: appState.screenPlan.colors.primary, size: 16)
-                        ColorSwatch(hex: appState.screenPlan.colors.accent, size: 16)
-                        ColorSwatch(hex: appState.screenPlan.colors.text, size: 16)
+                    Divider().frame(height: 20)
+
+                    // Global tone and color info
+                    HStack(spacing: 8) {
+                        Label(appState.screenPlan.tone.displayName, systemImage: "paintpalette")
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(.quaternary))
+
+                        // Color swatches
+                        HStack(spacing: 4) {
+                            ColorSwatch(hex: appState.screenPlan.colors.primary, size: 16)
+                            ColorSwatch(hex: appState.screenPlan.colors.accent, size: 16)
+                            ColorSwatch(hex: appState.screenPlan.colors.text, size: 16)
+                        }
                     }
                 }
             }
@@ -161,6 +172,7 @@ struct PlanPreviewView: View {
 // MARK: - Screen Card View
 
 struct ScreenCardView: View {
+    @EnvironmentObject var appState: AppState
     @Binding var screen: ScreenConfig
     let index: Int
     let screenshotItem: ScreenshotItem?
@@ -264,6 +276,32 @@ struct ScreenCardView: View {
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 6).fill(.quaternary.opacity(0.5)))
             }
+
+            // iPad layout config (shown when iPad generation is enabled)
+            if appState.generateIPad {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("iPad Layout", systemImage: "ipad")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+
+                    Picker("Layout", selection: iPadLayoutBinding) {
+                        ForEach(iPadLayoutType.allCases) { layout in
+                            Text(layout.displayName).tag(layout)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+
+                    Picker("Orientation", selection: iPadOrientationBinding) {
+                        Text("Portrait").tag("portrait")
+                        Text("Landscape").tag("landscape")
+                    }
+                    .pickerStyle(.segmented)
+                    .controlSize(.small)
+                }
+            }
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 12).fill(.background))
@@ -274,6 +312,34 @@ struct ScreenCardView: View {
         .sheet(isPresented: $showPromptEditor) {
             PromptEditorSheet(imagePrompt: $screen.imagePrompt)
         }
+    }
+
+    // MARK: - iPad Bindings
+
+    private var iPadLayoutBinding: Binding<iPadLayoutType> {
+        Binding(
+            get: { screen.resolvedIPadConfig.layoutType },
+            set: { newLayout in
+                if screen.iPadConfig == nil {
+                    screen.iPadConfig = iPadScreenConfig(layoutType: newLayout)
+                } else {
+                    screen.iPadConfig?.layoutType = newLayout
+                }
+            }
+        )
+    }
+
+    private var iPadOrientationBinding: Binding<String> {
+        Binding(
+            get: { screen.resolvedIPadConfig.orientation },
+            set: { newOrientation in
+                if screen.iPadConfig == nil {
+                    screen.iPadConfig = iPadScreenConfig(orientation: newOrientation)
+                } else {
+                    screen.iPadConfig?.orientation = newOrientation
+                }
+            }
+        )
     }
 }
 

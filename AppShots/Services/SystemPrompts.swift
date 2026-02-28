@@ -120,6 +120,54 @@ enum SystemPrompts {
     - Vary layouts across the set for visual interest
     """
 
+    // MARK: - iPad Plan Addendum
+
+    /// Appended to planGeneration when iPad screenshots are requested.
+    static let iPadPlanAddendum = """
+
+    ## iPad Screenshot Strategy (CRITICAL — you MUST include ipad_config for each screen)
+
+    This app also targets iPad. The iPad canvas is ~3:4 aspect ratio (2048×2732 portrait, 2732×2048 landscape),
+    much wider and more square than iPhone's ~9:19.5. This fundamentally changes layout strategy.
+
+    ### iPad Layout Types (choose one per screen):
+
+    - `standard`: Centered iPad device frame at 70% canvas width, text above. The default and most reliable layout.
+    - `angled`: iPad tilted ~8 degrees for dynamic 3D perspective. Use on 1-2 screens max.
+    - `frameless`: Floating UI with rounded corners and drop shadow, no device bezel. Modern, clean, confidence-building.
+    - `headline_dominant`: Large text area takes 45% of canvas, smaller device in bottom 55%. Best for conceptual value props.
+    - `ui_forward`: Full-bleed screenshot fills entire canvas edge-to-edge, minimal text. Only for visually stunning UIs.
+    - `multi_orientation`: Portrait + landscape devices side by side (Tier 2, will fall back to standard if not supported).
+    - `dark_light_dual`: Split canvas showing dark and light mode variants (Tier 2).
+    - `split_panel`: 2-3 panels showing different views side by side (Tier 2).
+    - `before_after`: Diagonal split transformation effect (Tier 2).
+
+    ### iPad Layout Mix Strategy:
+    - Hero shot: Use `standard` or `headline_dominant` for maximum clarity
+    - Feature screens: Mix `frameless`, `standard`, and `angled` for visual variety
+    - At most 1 `ui_forward` (full bleed) for a visually stunning screen
+    - iPad's wider canvas allows multi-column UIs, sidebars, and expanded toolbars — highlight these in image prompts
+    - Each screen shows why the iPad version is worth downloading separately from iPhone
+
+    ### iPad image_prompt Rules:
+    - Always mention "iPad" or "iPad Pro" in the prompt (not "iPhone")
+    - Specify the wider ~3:4 canvas and portrait orientation
+    - Emphasize iPad-specific UI: sidebars, multi-column layouts, toolbar-rich interfaces, split views
+    - Example: "Generate an iPad App Store screenshot showcasing the uploaded UI in a sleek iPad Pro mockup, centered. Bold heading 'Design Without Limits' at the top. Deep indigo gradient background with subtle mesh gradient accents. Premium editorial quality. 2048×2732 portrait."
+    - Another example: "Cinematic iPad showcase — uploaded screenshot displayed as a frameless floating UI with rounded corners and elegant shadow. Text 'Your Workspace, Perfected' above. Clean white-to-light-gray gradient. Professional App Store quality."
+
+    ### JSON Schema for iPad Config:
+    Add `ipad_config` to each screen:
+    ```json
+    "ipad_config": {
+        "layout_type": "standard|angled|frameless|headline_dominant|ui_forward|multi_orientation|dark_light_dual|split_panel|before_after",
+        "orientation": "portrait|landscape",
+        "image_prompt": "iPad-specific creative prompt for the AI image generator...",
+        "visual_direction": "iPad-specific visual direction..."
+    }
+    ```
+    """
+
     // MARK: - User-Facing Prompt Template
 
     /// The prompt template users can copy to have an LLM generate the structured Markdown.

@@ -1,5 +1,87 @@
 import Foundation
 
+// MARK: - iPad Layout Type
+
+enum iPadLayoutType: String, Codable, CaseIterable, Identifiable {
+    // Tier 1 — ship first
+    case standard           // Layout 1: centered iPad device frame
+    case angled             // Layout 2: tilted 3D perspective
+    case frameless          // Layout 3: floating UI, rounded corners + shadow, no device chrome
+    case headlineDominant   // Layout 5: large text area (45%), smaller device below
+    case uiForward          // Layout 7: full bleed, minimal/no text
+
+    // Tier 2 — new compositor capabilities
+    case multiOrientation   // Layout 4: portrait + landscape devices
+    case darkLightDual      // Layout 12: split dark/light mode
+    case splitPanel         // Layout 14: 2-3 panels showing different views
+    case beforeAfter        // Layout 15: diagonal split transformation
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Centered Device"
+        case .angled: return "Angled 3D"
+        case .frameless: return "Frameless"
+        case .headlineDominant: return "Headline Dominant"
+        case .uiForward: return "UI Forward"
+        case .multiOrientation: return "Multi-Orientation"
+        case .darkLightDual: return "Dark/Light Split"
+        case .splitPanel: return "Split Panel"
+        case .beforeAfter: return "Before/After"
+        }
+    }
+
+    /// Derive an iPad layout from iPhone layout modifiers
+    static func fromIPhoneModifiers(tilt: Bool, position: String, fullBleed: Bool) -> iPadLayoutType {
+        if fullBleed { return .uiForward }
+        if tilt { return .angled }
+        if position == "left" || position == "right" { return .headlineDominant }
+        return .standard
+    }
+}
+
+// MARK: - iPad Screen Config
+
+struct iPadScreenConfig: Codable, Equatable {
+    var layoutType: iPadLayoutType
+    var orientation: String    // "portrait" or "landscape"
+    var imagePrompt: String
+    var visualDirection: String
+    var secondaryScreenshotMatch: Int?  // For dual-screenshot layouts (dark/light, before/after)
+
+    init(
+        layoutType: iPadLayoutType = .standard,
+        orientation: String = "portrait",
+        imagePrompt: String = "",
+        visualDirection: String = "",
+        secondaryScreenshotMatch: Int? = nil
+    ) {
+        self.layoutType = layoutType
+        self.orientation = orientation
+        self.imagePrompt = imagePrompt
+        self.visualDirection = visualDirection
+        self.secondaryScreenshotMatch = secondaryScreenshotMatch
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case layoutType = "layout_type"
+        case orientation
+        case imagePrompt = "image_prompt"
+        case visualDirection = "visual_direction"
+        case secondaryScreenshotMatch = "secondary_screenshot_match"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.layoutType = (try? container.decode(iPadLayoutType.self, forKey: .layoutType)) ?? .standard
+        self.orientation = try container.decodeIfPresent(String.self, forKey: .orientation) ?? "portrait"
+        self.imagePrompt = try container.decodeIfPresent(String.self, forKey: .imagePrompt) ?? ""
+        self.visualDirection = try container.decodeIfPresent(String.self, forKey: .visualDirection) ?? ""
+        self.secondaryScreenshotMatch = try container.decodeIfPresent(Int.self, forKey: .secondaryScreenshotMatch)
+    }
+}
+
 // MARK: - Resolved Colors
 
 struct ResolvedColors: Codable, Equatable {
@@ -29,6 +111,7 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
     var fullBleed: Bool
     var visualDirection: String
     var imagePrompt: String    // Creative prompt for Gemini image generation
+    var iPadConfig: iPadScreenConfig?  // iPad-specific layout; nil = derive from iPhone modifiers
 
     init(
         id: UUID = UUID(),
@@ -40,7 +123,8 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
         position: String = "center",
         fullBleed: Bool = false,
         visualDirection: String = "",
-        imagePrompt: String = ""
+        imagePrompt: String = "",
+        iPadConfig: iPadScreenConfig? = nil
     ) {
         self.id = id
         self.index = index
@@ -52,6 +136,15 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
         self.fullBleed = fullBleed
         self.visualDirection = visualDirection
         self.imagePrompt = imagePrompt
+        self.iPadConfig = iPadConfig
+    }
+
+    /// Returns the iPad config, deriving from iPhone modifiers if not explicitly set.
+    var resolvedIPadConfig: iPadScreenConfig {
+        if let config = iPadConfig { return config }
+        return iPadScreenConfig(
+            layoutType: iPadLayoutType.fromIPhoneModifiers(tilt: tilt, position: position, fullBleed: fullBleed)
+        )
     }
 }
 
@@ -100,6 +193,7 @@ extension ScreenConfig {
         case fullBleed = "full_bleed"
         case visualDirection = "visual_direction"
         case imagePrompt = "image_prompt"
+        case iPadConfig = "ipad_config"
     }
 
     init(from decoder: Decoder) throws {
@@ -114,6 +208,7 @@ extension ScreenConfig {
         self.fullBleed = try container.decodeIfPresent(Bool.self, forKey: .fullBleed) ?? false
         self.visualDirection = try container.decodeIfPresent(String.self, forKey: .visualDirection) ?? ""
         self.imagePrompt = try container.decodeIfPresent(String.self, forKey: .imagePrompt) ?? ""
+        self.iPadConfig = try container.decodeIfPresent(iPadScreenConfig.self, forKey: .iPadConfig)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -127,5 +222,6 @@ extension ScreenConfig {
         try container.encode(fullBleed, forKey: .fullBleed)
         try container.encode(visualDirection, forKey: .visualDirection)
         try container.encode(imagePrompt, forKey: .imagePrompt)
+        try container.encodeIfPresent(iPadConfig, forKey: .iPadConfig)
     }
 }
