@@ -96,7 +96,9 @@ actor BackgroundGenerator {
                         throw GeneratorError.timeout(Int(timeoutSeconds))
                     }
 
-                    let data = try await group.next()!
+                    guard let data = try await group.next() else {
+                        throw GeneratorError.timeout(Int(timeoutSeconds))
+                    }
                     group.cancelAll()
                     return data
                 }
@@ -111,7 +113,7 @@ actor BackgroundGenerator {
             }
         }
 
-        throw lastError!
+        throw lastError ?? GeneratorError.generationFailed("All retries exhausted")
     }
 
     // MARK: - Generate single background (OpenAI-compatible Chat Completions)
