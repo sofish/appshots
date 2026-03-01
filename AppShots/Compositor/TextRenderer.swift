@@ -1,11 +1,7 @@
 import Foundation
 import CoreGraphics
-#if canImport(CoreText)
 import CoreText
-#endif
-#if canImport(AppKit)
 import AppKit
-#endif
 
 /// Renders heading and subheading text using Core Text for precise typographic control.
 /// Uses SF Pro Display as primary font (macOS system), with fallbacks.
@@ -27,17 +23,61 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: true)
+
+        // For ALL CAPS headlines, use positive tracking (caps need more breathing room)
+        let isAllCaps = text == text.uppercased() && text != text.lowercased()
+        let tracking: CGFloat = isAllCaps ? (adjustedSize * 0.05) : (adjustedSize * -0.02)
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: createFont(size: adjustedSize, weight: .bold),
             .foregroundColor: color,
-            .kern: adjustedSize * -0.02 as NSNumber  // Tight tracking for headlines
+            .kern: tracking as NSNumber
         ]
 
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
         paragraphStyle.lineHeightMultiple = 1.1
+
+        var allAttributes = attributes
+        allAttributes[.paragraphStyle] = paragraphStyle
+
+        let attributedString = NSAttributedString(string: text, attributes: allAttributes)
+        drawAttributedString(context: context, string: attributedString, rect: rect)
+    }
+
+    // MARK: - Heading Compact (for short 1-3 word headlines)
+
+    func drawHeadingCompact(
+        context: CGContext,
+        text: String,
+        rect: CGRect,
+        color: CGColor,
+        fontSize: CGFloat
+    ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
+        let wordCount = text.split(separator: " ").count
+        let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: true)
+
+        // For ALL CAPS headlines, use positive tracking
+        let isAllCaps = text == text.uppercased() && text != text.lowercased()
+        let tracking: CGFloat = isAllCaps ? (adjustedSize * 0.05) : (adjustedSize * -0.02)
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: createFont(size: adjustedSize, weight: .bold),
+            .foregroundColor: color,
+            .kern: tracking as NSNumber
+        ]
+
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        // Use tighter line spacing for very short headlines (1-3 words) to maximize visual punch
+        paragraphStyle.lineHeightMultiple = (wordCount <= 3) ? 1.0 : 1.1
 
         var allAttributes = attributes
         allAttributes[.paragraphStyle] = paragraphStyle
@@ -55,12 +95,27 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
-        // Draw shadow pass first (offset, dark)
-        let shadowOffset: CGFloat = fontSize * 0.04
-        let shadowRect = rect.offsetBy(dx: shadowOffset, dy: -shadowOffset)
-        let shadowColor = CGColor(gray: 0, alpha: 0.6)
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
 
-        drawHeading(context: context, text: text, rect: shadowRect, color: shadowColor, fontSize: fontSize)
+        // Draw soft blur shadow by rendering shadow text 3 times at slightly different offsets
+        // This creates a gaussian-like shadow effect for improved quality
+        let baseOffset: CGFloat = fontSize * 0.04
+
+        // Furthest shadow pass (largest offset, lowest alpha)
+        let farShadowRect = rect.offsetBy(dx: baseOffset * 1.5, dy: -baseOffset * 1.5)
+        let farShadowColor = CGColor(gray: 0, alpha: 0.3)
+        drawHeading(context: context, text: text, rect: farShadowRect, color: farShadowColor, fontSize: fontSize)
+
+        // Middle shadow pass
+        let midShadowRect = rect.offsetBy(dx: baseOffset, dy: -baseOffset)
+        let midShadowColor = CGColor(gray: 0, alpha: 0.5)
+        drawHeading(context: context, text: text, rect: midShadowRect, color: midShadowColor, fontSize: fontSize)
+
+        // Closest shadow pass (smallest offset, highest alpha)
+        let nearShadowRect = rect.offsetBy(dx: baseOffset * 0.5, dy: -baseOffset * 0.5)
+        let nearShadowColor = CGColor(gray: 0, alpha: 0.7)
+        drawHeading(context: context, text: text, rect: nearShadowRect, color: nearShadowColor, fontSize: fontSize)
 
         // Draw main heading on top
         drawHeading(context: context, text: text, rect: rect, color: color, fontSize: fontSize)
@@ -75,10 +130,13 @@ struct TextRenderer {
         color: CGColor,
         fontSize: CGFloat
     ) {
+        context.setAllowsFontSmoothing(true)
+        context.setShouldSmoothFonts(true)
+
         let adjustedSize = adaptiveFontSize(text: text, maxSize: fontSize, rect: rect, isBold: false)
 
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: createFont(size: adjustedSize, weight: .regular),
+            .font: createFont(size: adjustedSize, weight: .medium),
             .foregroundColor: color,
             .kern: adjustedSize * 0.005 as NSNumber  // Slight positive tracking for readability
         ]

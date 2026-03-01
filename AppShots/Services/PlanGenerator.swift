@@ -39,7 +39,48 @@ struct PlanGenerator {
             )
         }
 
-        return try parseResponse(response)
+        let plan = try parseResponse(response)
+        return enhancePrompts(plan: plan)
+    }
+
+    // MARK: - Enhance image prompts post-parse
+
+    /// Validates and enhances image prompts after LLM parsing to ensure minimum quality.
+    /// - Pads short prompts with quality cues
+    /// - Injects heading text if missing from the prompt
+    /// - Injects device presentation language if missing
+    private func enhancePrompts(plan: ScreenPlan) -> ScreenPlan {
+        var enhanced = plan
+        enhanced.screens = plan.screens.map { screen in
+            var screen = screen
+            var prompt = screen.imagePrompt
+
+            // If prompt is too short, auto-enhance with bookend quality cues
+            if prompt.count < 50 {
+                prompt = "App Store screenshot showcase: " + prompt + " Premium editorial quality, clean composition."
+            }
+
+            // Ensure the heading text appears in the prompt
+            let headingLower = screen.heading.lowercased()
+            if !prompt.lowercased().contains(headingLower) {
+                prompt += " Heading: \"\(screen.heading)\"."
+                if !screen.subheading.isEmpty {
+                    prompt += " Subheading: \"\(screen.subheading)\"."
+                }
+            }
+
+            // Ensure device presentation is mentioned
+            let deviceKeywords = ["iphone", "ipad", "device", "mockup", "floating", "frame", "full-bleed", "full bleed", "edge-to-edge"]
+            let promptLower = prompt.lowercased()
+            let hasDeviceMention = deviceKeywords.contains { promptLower.contains($0) }
+            if !hasDeviceMention {
+                prompt += " Floating device mockup with subtle shadow."
+            }
+
+            screen.imagePrompt = prompt
+            return screen
+        }
+        return enhanced
     }
 
     // MARK: - Build user message from descriptor
@@ -113,14 +154,18 @@ struct PlanGenerator {
         do {
             return try decoder.decode(ScreenPlan.self, from: data)
         } catch {
-            let preview = String(jsonString.prefix(300))
-            throw LLMService.LLMError.decodingFailed("\(error.localizedDescription)\nResponse preview: \(preview)")
+            let extractedPreview = String(jsonString.prefix(300))
+            let rawPreview = String(response.prefix(300))
+            let detail = extractedPreview == rawPreview
+                ? "Response preview: \(extractedPreview)"
+                : "Extracted JSON preview: \(extractedPreview)\nRaw response preview: \(rawPreview)"
+            throw LLMService.LLMError.decodingFailed("\(error.localizedDescription)\n\(detail)")
         }
     }
 
     private func extractJSON(from text: String) -> String {
-        // Try to find JSON block in markdown code fence
-        if let startRange = text.range(of: "```json"),
+        // Try to find JSON block in markdown code fence (case-insensitive language tag)
+        if let startRange = text.range(of: "```json", options: .caseInsensitive),
            let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
             return String(text[startRange.upperBound..<endRange.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -129,8 +174,12 @@ struct PlanGenerator {
         // Try to find JSON block without language tag
         if let startRange = text.range(of: "```"),
            let endRange = text.range(of: "```", range: startRange.upperBound..<text.endIndex) {
-            return String(text[startRange.upperBound..<endRange.lowerBound])
+            let extracted = String(text[startRange.upperBound..<endRange.lowerBound])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Only use if it looks like JSON (starts with { or [)
+            if extracted.hasPrefix("{") || extracted.hasPrefix("[") {
+                return extracted
+            }
         }
 
         // Try to find raw JSON object

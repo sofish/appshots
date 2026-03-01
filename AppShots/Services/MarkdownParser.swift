@@ -34,8 +34,8 @@ struct MarkdownParser {
         var errorDescription: String? {
             switch self {
             case .emptyDocument: return "The Markdown document is empty."
-            case .missingAppName: return "Missing app name (# heading)."
-            case .missingFeatures: return "No features found (### headings under 功能亮点/Features)."
+            case .missingAppName: return "Missing app name: Start your Markdown with '# App Name' on the first line"
+            case .missingFeatures: return "No features found: Add features under '## 功能亮点' or '## Features' with '### Feature Name' sub-sections"
             }
         }
     }
@@ -51,6 +51,38 @@ struct MarkdownParser {
 
         return AppDescriptor(
             name: walker.appName,
+            tagline: walker.tagline,
+            category: walker.metadata["类别"] ?? walker.metadata["Category"] ?? "",
+            platforms: parsePlatforms(walker.metadata["平台"] ?? walker.metadata["Platform"] ?? "iOS"),
+            language: walker.metadata["语言"] ?? walker.metadata["Language"] ?? "en",
+            style: parseStyle(walker.metadata["风格"] ?? walker.metadata["Style"] ?? "minimal"),
+            colors: parseColors(walker.metadata["色调"] ?? walker.metadata["Colors"] ?? ""),
+            corePitch: walker.corePitch,
+            features: walker.features,
+            targetAudience: walker.targetAudience,
+            socialProof: walker.socialProof.isEmpty ? nil : walker.socialProof
+        )
+    }
+
+    /// Parses as much as possible from the Markdown source without throwing.
+    /// Returns an AppDescriptor with whatever it can extract, filling in defaults for missing fields.
+    /// Useful for live preview where the document may be incomplete.
+    func parsePartial(_ source: String) -> AppDescriptor {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            var empty = AppDescriptor.empty
+            empty.name = "[Incomplete]"
+            return empty
+        }
+
+        let document = Document(parsing: trimmed)
+        var walker = DescriptorWalker()
+        walker.visit(document)
+
+        let name = walker.appName.isEmpty ? "[Incomplete]" : walker.appName
+
+        return AppDescriptor(
+            name: name,
             tagline: walker.tagline,
             category: walker.metadata["类别"] ?? walker.metadata["Category"] ?? "",
             platforms: parsePlatforms(walker.metadata["平台"] ?? walker.metadata["Platform"] ?? "iOS"),

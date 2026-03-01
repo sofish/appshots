@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(CoreGraphics)
 import CoreGraphics
-#endif
 
 // MARK: - Device Type
 
@@ -85,6 +83,14 @@ extension DeviceSize {
         isRequired: false
     )
 
+    static let iPhone6_1 = DeviceSize(
+        id: "iphone_6.1",
+        displayName: "iPhone 6.1\"",
+        width: 1179,
+        height: 2556,
+        isRequired: false
+    )
+
     static let iPad13 = DeviceSize(
         id: "ipad_13",
         displayName: "iPad 13\" (Portrait)",
@@ -102,8 +108,12 @@ extension DeviceSize {
     )
 
     static let allSizes: [DeviceSize] = [
-        .iPhone6_9, .iPhone6_7, .iPhone6_5, .iPhone5_5, .iPad13, .iPad13Landscape
+        .iPhone6_9, .iPhone6_7, .iPhone6_5, .iPhone5_5, .iPhone6_1, .iPad13, .iPad13Landscape
     ]
+
+    static var recommendedSizes: [DeviceSize] {
+        allSizes.filter { $0.isRequired }
+    }
 
     static let defaultSizes: [DeviceSize] = [
         .iPhone6_9, .iPhone6_7
@@ -135,5 +145,14 @@ struct ExportConfig {
     var maxFileSizeMB: Double = 10.0   // App Store limit
 
     static let `default` = ExportConfig()
+
+    static func estimatedFileSize(pixelCount: Int, format: ExportFormat, quality: Double) -> Int {
+        switch format {
+        case .png:
+            return pixelCount * 4
+        case .jpeg:
+            return Int(Double(pixelCount) * 3.0 * quality * 0.15)
+        }
+    }
 }
 

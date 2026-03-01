@@ -28,6 +28,12 @@ enum SystemPrompts {
        - Must be instantly readable at thumbnail size in App Store search results
        - Use power words: "Effortless," "Instant," "Beautiful," "Smart," "Free"
        - Subheading: ONE short phrase (max 8 words) that supports the headline
+       - Headlines should create a mental image: "Your Morning, Organized" not "Organization Features"
+       - Use parallel structure across the set — if headline 1 starts with a verb, most others should too
+       - Avoid generic filler words: "Simple", "Easy", "Best", "Great" — these mean nothing specific and waste precious space
+       - Power formula: [Action Verb] + [Specific Outcome] in 3-5 words
+       - Excellent headline examples: "Track Every Dollar", "Design Without Limits", "Write Anywhere, Anytime"
+       - BAD headlines to avoid: "The Best App" (generic), "Simple and Easy" (says nothing), "Feature-Rich Solution" (jargon, not a benefit)
 
     3. **Visual Tone Mapping:**
        - minimal → dark backgrounds (#0a0a0a to #1a1a2e), clean gradients, subtle glow effects
@@ -48,6 +54,32 @@ enum SystemPrompts {
        - Use `position: "left"` or `"right"` for 1 screen to break rhythm
        - Use `full_bleed: true` on at most 1 screen with a visually stunning UI
        - Do NOT over-use modifiers — simplicity wins
+       - For sets of 5+ screenshots, the recommended mix is: Screen 1 = center (hero impact), Screen 2 = center or tilt (show core flow), Screen 3 = left or right (break visual monotony), Screen 4 = center (return to stability), Screen 5 = tilt or full_bleed (strong closer)
+       - For sets of 3-4 screenshots: keep it simple — mostly center with 1 variation maximum
+
+    ## Conversion Psychology
+
+    - First screenshot must trigger an emotional response in under 1 second — use outcome language that shows the end state ("Your photos, perfected" not "Photo editing tools")
+    - Headlines should read as micro-stories that follow a situation-to-solution arc ("Forget passwords? Never Again.")
+    - Use concrete numbers when possible — specificity builds trust ("10x faster" beats "much faster", "2M+ users" beats "millions of users")
+    - Create urgency or curiosity gaps when appropriate — leave the viewer needing to know more ("The feature Apple forgot" or "What 10,000 creators use daily")
+
+    ## Color Science
+
+    - Dark backgrounds (#0a0a0a to #1a1a2e) convert 23% better than white backgrounds for premium apps — default to dark unless the app brand is explicitly light
+    - High contrast text (white on dark) remains readable at 1/4 thumbnail size in App Store search results — this is where most install decisions happen
+    - Accent colors should be used sparingly — max 10% of total canvas area. Overuse dilutes impact.
+    - Complementary color pairs create visual tension that draws the eye: blue+orange, purple+gold, green+coral
+    - Never use red as a primary background color — it subconsciously signals danger, errors, or warnings to users
+
+    ## Screenshot Sequencing Strategy
+
+    - Screen 1 (Hero): Emotional hook — show what life looks like WITH the app. The headline should deliver the full value proposition in 3 words max. This screen gets 10x more views than any other.
+    - Screen 2: The "aha moment" — showcase the primary workflow or interaction that makes users think "I need this." Focus on the single most impressive capability.
+    - Screen 3: Trust builder — incorporate social proof, impressive stats, or the #2 feature. This is where skeptics are converted.
+    - Screen 4: Differentiator — highlight what competitors cannot do. This is your moat, your unique angle.
+    - Screen 5+: Breadth — secondary features that show depth and comprehensiveness. Each should highlight a distinct use case.
+    - Final screen: Call to action, awards, App Store ratings, or press mentions. End with validation.
 
     ## Mapping Rules from Markdown Structure
 
@@ -103,15 +135,38 @@ enum SystemPrompts {
     - Reference professional aesthetics: "studio-lit", "editorial quality", "cinematic atmosphere"
     - Include texture/material cues: "frosted glass effect", "soft bokeh particles", "silk gradient"
     - Each screen's background should be visually distinct but cohesive with the palette
+    - Each visual_direction MUST specify: (1) gradient type and direction (linear, radial, diagonal, mesh), (2) at least 2 hex colors, (3) lighting/glow effects (position, color, intensity), (4) texture or pattern if any (geometric lines, noise, bokeh, grain)
+    - Backgrounds should tell a subtle story — a mesh gradient suggests modern tech, a radial glow suggests warmth and focus, geometric patterns suggest precision and engineering, soft bokeh suggests elegance and depth
+    - Backgrounds across the screenshot set should be cohesive but progressively varied — shift the hue 10-20 degrees per screen to create a natural visual journey while maintaining brand consistency
+    - Never describe a background as just "dark gradient" — instead specify fully: "dark navy (#0a0f2e) to deep charcoal (#1a1a2e) diagonal gradient with a subtle blue (#3b82f6) glow from the top-right corner and faint geometric grid lines at 15% opacity"
 
     ## image_prompt Writing Rules (CRITICAL — this is sent directly to Gemini for image generation)
     - Write a CONCISE, CREATIVE prompt that will be sent with the screenshot to an AI image generator
-    - The prompt should describe the FULL composition: device presentation, text placement, background, atmosphere
-    - Be creative and specific but SHORT — 1-3 sentences max
-    - Include the heading/subheading text in the prompt so the image generator renders them
-    - Example: "Generate a modern app store screenshot showcasing the uploaded UI in a floating iPhone with dramatic perspective tilt. Bold heading 'Focus. Sync. dotmd.' at the top. Dark navy background with subtle grid lines and glowing accent elements. Premium, editorial quality."
-    - Another example: "Cinematic app showcase — uploaded screenshot displayed in a sleek device mockup, creative angle, with the text 'Instant iCloud Sync' overlaid. Deep gradient background with soft bokeh lights. Professional App Store quality."
-    - Do NOT over-specify — let the image generator be creative with composition and perspective
+    - The prompt MUST describe what Gemini should CREATE, not what it should avoid. Positive instructions only.
+    - Be creative and specific but SHORT — 2-4 sentences max
+
+    ### Each image_prompt MUST include ALL of these elements:
+    1. **Device angle/presentation**: How the iPhone is shown (e.g., "floating at a slight 5-degree tilt", "centered upright with subtle shadow", "angled dramatically from the left")
+    2. **Exact heading text in quotes**: The precise heading and subheading to render (e.g., Heading: "Track Every Dollar" with subheading "Effortless budgeting")
+    3. **Text styling**: Font weight, approximate size, and placement (e.g., "Bold white heading text in the top third of the canvas, 48pt equivalent, with a lighter subheading beneath")
+    4. **Background description with colors**: Specific gradient or solid with hex values and mood (e.g., "Deep navy (#0a0f2e) to charcoal (#1a1a2e) vertical gradient with a soft blue (#3b82f6) glow from the top-right")
+    5. **Overall mood/quality target**: The aesthetic goal (e.g., "Premium editorial quality, studio-lit, cinematic atmosphere")
+
+    ### GOOD prompt examples:
+    - "App Store screenshot: uploaded UI displayed in a floating iPhone mockup tilted 5 degrees right. Bold white heading 'Track Every Dollar' in the top third, with muted gray subheading 'Effortless budgeting' below. Dark navy (#0a0f2e) to charcoal (#1a1a2e) gradient background with a soft cyan (#06b6d4) glow from the top-right corner. Premium editorial quality."
+    - "Cinematic app showcase: uploaded screenshot inside a centered upright iPhone with subtle drop shadow. Large bold heading 'Your Morning, Organized' top-center in white, subheading 'Plan in seconds' in light gray beneath. Rich indigo (#1e1b4b) gradient background with soft radial light and faint geometric lines. Studio-quality composition."
+
+    ### Composition Quality Tips:
+    - COMPOSITION HIERARCHY: The device/screenshot should occupy 50-70% of the canvas visual weight. Heading text should be immediately readable. Background should support, not compete.
+    - DEPTH CUES: Mention shadows, reflections, or layering to create visual depth (e.g., 'device floating with soft shadow on gradient background')
+    - BREATHING ROOM: Always leave margins — the device should never touch the canvas edges. Minimum 5% padding on all sides.
+    - TEXT CONTRAST: If the background is dark, specify white or light text. If light, specify dark text. Never let text blend into the background.
+
+    ### BAD prompt examples (and why):
+    - BAD: "Show the app" — Too vague, no composition details, no heading text, no colors
+    - BAD: "Don't make it cluttered, avoid red colors, no busy backgrounds" — Describes what to AVOID instead of what to CREATE
+    - BAD: "Cool screenshot with nice vibes" — No specifics on device angle, text, colors, or styling
+    - BAD: "iPhone showing the dashboard feature" — Missing heading text, background description, text styling, and quality target
 
     ## Important
     - The number of screens MUST match the number of features/screenshots provided
@@ -190,6 +245,13 @@ enum SystemPrompts {
     - The `image_prompt` field is REQUIRED and must be iPad-specific (not a copy of the iPhone prompt)
     - Use "portrait" orientation unless the app has a strong landscape use case
     - Supported layouts: standard, angled, frameless, headline_dominant, ui_forward, dark_light_dual, split_panel
+
+    ### iPad Screenshot Differentiation Rules
+    - iPad screenshots MUST show iPad-specific UI advantages, not just bigger versions of iPhone screens
+    - Highlight: sidebars, multi-column layouts, drag-and-drop surfaces, keyboard shortcut bars, split views
+    - If the app doesn't have iPad-specific features, focus on the larger canvas advantage: more content visible, larger touch targets, better readability
+    - iPad screenshots should feel spacious and premium — avoid cramming too much content
+    - iPad headline text should be 15-20% larger relative to canvas than iPhone headlines
     """
 
     // MARK: - User-Facing Prompt Template
@@ -246,5 +308,9 @@ enum SystemPrompts {
     - Choose colors that match the app's existing brand/UI
     - The 风格 (style) should match the app's personality
     - Feature descriptions should be benefit-driven and concise
+    - Each feature should describe what the user GETS, not what the app DOES ('Never lose a memory' not 'Cloud backup system')
+    - Order features by importance — the first feature maps to the hero screenshot
+    - The tagline should pass the 'billboard test' — readable and meaningful in 2 seconds
+    - Include at least 3 features and no more than 6 — this maps to your screenshot count
     """
 }

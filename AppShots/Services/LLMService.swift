@@ -19,6 +19,9 @@ actor LLMService {
         case emptyResponse
         case noAPIKey
         case noBaseURL
+        case rateLimited(retryAfter: Int?)
+        case serverError(Int)
+        case modelNotFound
 
         var errorDescription: String? {
             switch self {
@@ -28,6 +31,37 @@ actor LLMService {
             case .emptyResponse: return "Empty response from API."
             case .noAPIKey: return "No LLM API key configured. Set it in Settings."
             case .noBaseURL: return "No LLM base URL configured. Set it in Settings."
+            case .rateLimited(let retryAfter):
+                if let seconds = retryAfter {
+                    return "Rate limited by API. Retry after \(seconds) seconds."
+                }
+                return "Rate limited by API."
+            case .serverError(let code): return "API server error (HTTP \(code))."
+            case .modelNotFound: return "The specified model was not found."
+            }
+        }
+
+        var friendlyMessage: String {
+            switch self {
+            case .rateLimited:
+                return "The API is rate-limited. Please wait a moment and try again."
+            case .serverError:
+                return "The API server is experiencing issues. Please try again later."
+            case .modelNotFound:
+                return "The specified model was not found. Check your model name in Settings."
+            case .invalidURL:
+                return "The API URL is invalid. Check your settings."
+            case .noAPIKey, .noBaseURL:
+                return "API configuration is incomplete. Open Settings to configure your API keys."
+            case .invalidResponse:
+                return "The API returned an unexpected response. Please try again."
+            case .decodingFailed(let detail):
+                if detail.contains("API error") {
+                    return "The API returned an error. Check your API key and model settings."
+                }
+                return "The API response could not be understood. The format may have changed."
+            case .emptyResponse:
+                return "The API returned an empty response. Please try again."
             }
         }
     }
@@ -137,13 +171,37 @@ actor LLMService {
 
         if let httpResponse = response as? HTTPURLResponse,
            !(200...299).contains(httpResponse.statusCode) {
+            let statusCode = httpResponse.statusCode
+
+            // Handle rate limiting (HTTP 429)
+            if statusCode == 429 {
+                let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
+                    .flatMap { Int($0) }
+                throw LLMError.rateLimited(retryAfter: retryAfter)
+            }
+
+            // Handle server errors (HTTP 5xx)
+            if (500...599).contains(statusCode) {
+                throw LLMError.serverError(statusCode)
+            }
+
+            // Handle model not found (HTTP 404 with model-related message)
+            if statusCode == 404 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let error = json["error"] as? [String: Any],
+                   let message = error["message"] as? String,
+                   message.lowercased().contains("model") {
+                    throw LLMError.modelNotFound
+                }
+            }
+
             // Try to extract Anthropic error message
             if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let error = json["error"] as? [String: Any],
                let message = error["message"] as? String {
                 throw LLMError.decodingFailed("API error: \(message)")
             }
-            throw LLMError.invalidResponse(httpResponse.statusCode)
+            throw LLMError.invalidResponse(statusCode)
         }
 
         return data
