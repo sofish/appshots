@@ -235,6 +235,18 @@ struct ExportView: View {
                                     .font(.caption)
                             }
                             .foregroundStyle(.secondary)
+
+                            // Variation thumbnails
+                            if appState.variationCount > 1,
+                               let variations = appState.backgroundVariations[index],
+                               variations.count > 1 {
+                                variationThumbnails(
+                                    screenIndex: index,
+                                    variations: variations,
+                                    selectedIndex: appState.selectedVariation[index] ?? 0,
+                                    deviceType: .iPhone
+                                )
+                            }
                         }
                     }
 
@@ -247,7 +259,7 @@ struct ExportView: View {
                                     .frame(height: 160)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                     .shadow(color: .black.opacity(0.1), radius: 3, y: 2)
-                                    .accessibilityLabel("Screenshot \(index + 1)")
+                                    .accessibilityLabel("iPad Screenshot \(index + 1)")
 
                                 HStack(spacing: 2) {
                                     Image(systemName: "ipad")
@@ -256,11 +268,56 @@ struct ExportView: View {
                                         .font(.caption)
                                 }
                                 .foregroundStyle(.secondary)
+
+                                // iPad variation thumbnails
+                                if appState.variationCount > 1,
+                                   let variations = appState.iPadBackgroundVariations[index],
+                                   variations.count > 1 {
+                                    variationThumbnails(
+                                        screenIndex: index,
+                                        variations: variations,
+                                        selectedIndex: appState.selectedIPadVariation[index] ?? 0,
+                                        deviceType: .iPad
+                                    )
+                                }
                             }
                         }
                     }
                 }
                 .padding(.vertical, 4)
+            }
+        }
+    }
+
+    // MARK: - Variation Thumbnails
+
+    private func variationThumbnails(
+        screenIndex: Int,
+        variations: [Int: Data],
+        selectedIndex: Int,
+        deviceType: DeviceType
+    ) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(variations.keys.sorted()), id: \.self) { varIdx in
+                if let data = variations[varIdx], let nsImage = NSImage(data: data) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 36, height: 36)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(varIdx == selectedIndex ? Color.accentColor : Color.clear, lineWidth: 2)
+                        )
+                        .onTapGesture {
+                            appState.selectVariation(
+                                screenIndex: screenIndex,
+                                variationIndex: varIdx,
+                                deviceType: deviceType
+                            )
+                        }
+                        .accessibilityLabel("Variation \(varIdx + 1)")
+                }
             }
         }
     }
@@ -410,7 +467,9 @@ struct ExportView: View {
 
     // MARK: - Format Selection
 
+    @ViewBuilder
     private var formatSelection: some View {
+        @Bindable var appState = appState
         VStack(alignment: .leading, spacing: 8) {
             Text("Export Format")
                 .font(.headline)

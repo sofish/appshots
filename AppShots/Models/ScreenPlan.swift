@@ -115,6 +115,7 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
     var fullBleed: Bool
     var visualDirection: String
     var imagePrompt: String    // Creative prompt for Gemini image generation
+    var imagePromptVariations: [String]  // Alternative creative directions for the same screen
     var iPadConfig: iPadScreenConfig?  // iPad-specific layout; nil = derive from iPhone modifiers
 
     init(
@@ -128,6 +129,7 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
         fullBleed: Bool = false,
         visualDirection: String = "",
         imagePrompt: String = "",
+        imagePromptVariations: [String] = [],
         iPadConfig: iPadScreenConfig? = nil
     ) {
         self.id = id
@@ -140,6 +142,7 @@ struct ScreenConfig: Identifiable, Codable, Equatable {
         self.fullBleed = fullBleed
         self.visualDirection = visualDirection
         self.imagePrompt = imagePrompt
+        self.imagePromptVariations = imagePromptVariations
         self.iPadConfig = iPadConfig
     }
 
@@ -230,6 +233,7 @@ struct ScreenPlan: Codable, Equatable {
             fullBleed: copy.fullBleed,
             visualDirection: copy.visualDirection,
             imagePrompt: copy.imagePrompt,
+            imagePromptVariations: copy.imagePromptVariations,
             iPadConfig: copy.iPadConfig
         )
         screens.append(copy)
@@ -311,6 +315,7 @@ extension ScreenConfig {
         case fullBleed = "full_bleed"
         case visualDirection = "visual_direction"
         case imagePrompt = "image_prompt"
+        case imagePromptVariations = "image_prompt_variations"
         case iPadConfig = "ipad_config"
     }
 
@@ -326,6 +331,7 @@ extension ScreenConfig {
         self.fullBleed = try container.decodeIfPresent(Bool.self, forKey: .fullBleed) ?? false
         self.visualDirection = try container.decodeIfPresent(String.self, forKey: .visualDirection) ?? ""
         self.imagePrompt = try container.decodeIfPresent(String.self, forKey: .imagePrompt) ?? ""
+        self.imagePromptVariations = try container.decodeIfPresent([String].self, forKey: .imagePromptVariations) ?? []
         self.iPadConfig = try container.decodeIfPresent(iPadScreenConfig.self, forKey: .iPadConfig)
     }
 
@@ -340,6 +346,7 @@ extension ScreenConfig {
         try container.encode(fullBleed, forKey: .fullBleed)
         try container.encode(visualDirection, forKey: .visualDirection)
         try container.encode(imagePrompt, forKey: .imagePrompt)
+        try container.encode(imagePromptVariations, forKey: .imagePromptVariations)
         try container.encodeIfPresent(iPadConfig, forKey: .iPadConfig)
     }
 }

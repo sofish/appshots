@@ -166,7 +166,9 @@ struct ScreenshotGalleryView: View {
 
     // MARK: - Screenshot Grid
 
+    @ViewBuilder
     private var screenshotGrid: some View {
+        @Bindable var appState = appState
         ScrollView {
             VStack(spacing: 16) {
                 // Screenshots

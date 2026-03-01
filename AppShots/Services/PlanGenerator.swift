@@ -15,13 +15,14 @@ struct PlanGenerator {
     func generate(
         descriptor: AppDescriptor,
         screenshotData: [Data],
-        includeIPad: Bool = false
+        includeIPad: Bool = false,
+        variationCount: Int = 1
     ) async throws -> ScreenPlan {
         var systemPrompt = SystemPrompts.planGeneration
         if includeIPad {
             systemPrompt += SystemPrompts.iPadPlanAddendum
         }
-        let userMessage = buildUserMessage(from: descriptor, screenshotCount: screenshotData.count, includeIPad: includeIPad)
+        let userMessage = buildUserMessage(from: descriptor, screenshotCount: screenshotData.count, includeIPad: includeIPad, variationCount: variationCount)
 
         let response: String
         if screenshotData.isEmpty {
@@ -53,39 +54,40 @@ struct PlanGenerator {
         var enhanced = plan
         enhanced.screens = plan.screens.map { screen in
             var screen = screen
-            var prompt = screen.imagePrompt
-
-            // If prompt is too short, auto-enhance with bookend quality cues
-            if prompt.count < 50 {
-                prompt = "App Store screenshot showcase: " + prompt + " Premium editorial quality, clean composition."
+            screen.imagePrompt = enhanceSinglePrompt(screen.imagePrompt, screen: screen)
+            screen.imagePromptVariations = screen.imagePromptVariations.map { variation in
+                enhanceSinglePrompt(variation, screen: screen)
             }
-
-            // Ensure the heading text appears in the prompt
-            let headingLower = screen.heading.lowercased()
-            if !prompt.lowercased().contains(headingLower) {
-                prompt += " Heading: \"\(screen.heading)\"."
-                if !screen.subheading.isEmpty {
-                    prompt += " Subheading: \"\(screen.subheading)\"."
-                }
-            }
-
-            // Ensure device presentation is mentioned
-            let deviceKeywords = ["iphone", "ipad", "device", "mockup", "floating", "frame", "full-bleed", "full bleed", "edge-to-edge"]
-            let promptLower = prompt.lowercased()
-            let hasDeviceMention = deviceKeywords.contains { promptLower.contains($0) }
-            if !hasDeviceMention {
-                prompt += " Floating device mockup with subtle shadow."
-            }
-
-            screen.imagePrompt = prompt
             return screen
         }
         return enhanced
     }
 
+    /// Enhances a single prompt string with heading text and quality cues.
+    /// Does NOT inject device positioning — lets the image model decide composition freely.
+    private func enhanceSinglePrompt(_ rawPrompt: String, screen: ScreenConfig) -> String {
+        var prompt = rawPrompt
+
+        // If prompt is too short, auto-enhance with bookend quality cues
+        if prompt.count < 50 {
+            prompt = "Creative app showcase: " + prompt + " Atmospheric depth, layered composition with ambient lighting."
+        }
+
+        // Ensure the heading text appears in the prompt
+        let headingLower = screen.heading.lowercased()
+        if !prompt.lowercased().contains(headingLower) {
+            prompt += " Heading: \"\(screen.heading)\"."
+            if !screen.subheading.isEmpty {
+                prompt += " Subheading: \"\(screen.subheading)\"."
+            }
+        }
+
+        return prompt
+    }
+
     // MARK: - Build user message from descriptor
 
-    private func buildUserMessage(from desc: AppDescriptor, screenshotCount: Int, includeIPad: Bool = false) -> String {
+    private func buildUserMessage(from desc: AppDescriptor, screenshotCount: Int, includeIPad: Bool = false, variationCount: Int = 1) -> String {
         var parts: [String] = []
 
         parts.append("# \(desc.name)")
@@ -135,6 +137,12 @@ struct PlanGenerator {
             parts.append("The iPad canvas is 2048×2732 (~3:4 ratio). Choose layouts that leverage the wider canvas.")
             parts.append("Use varied iPad layout types: standard, angled, frameless, headline_dominant, ui_forward.")
             parts.append("Write iPad-specific image_prompts that mention 'iPad' and describe the wider canvas composition.")
+        }
+
+        if variationCount > 1 {
+            parts.append("")
+            parts.append("IMPORTANT: Please generate \(variationCount - 1) image_prompt_variations per screen (in addition to the primary image_prompt, for \(variationCount) total variations).")
+            parts.append("Each variation MUST explore a visually distinct creative direction — different color temperature, lighting mood, atmospheric technique, or composition energy.")
         }
 
         return parts.joined(separator: "\n")

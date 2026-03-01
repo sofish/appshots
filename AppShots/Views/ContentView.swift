@@ -252,7 +252,7 @@ struct StepRow: View {
             Spacer()
 
             if isHovered && isAccessible {
-                Text("\u2318\(step.rawValue + 1)")
+                Text("\u{2318}\(step.rawValue + 1)")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .transition(.opacity)

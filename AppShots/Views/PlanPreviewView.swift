@@ -83,7 +83,7 @@ struct PlanPreviewView: View {
                             .lineLimit(1)
                         Button {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                dismissedWarnings.insert(warning)
+                                _ = dismissedWarnings.insert(warning)
                             }
                         } label: {
                             Image(systemName: "xmark")
@@ -93,14 +93,14 @@ struct PlanPreviewView: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Color.orange.opacity(0.15)))
+                    .background(Capsule().fill(Color.orange.opacity(0.15) as Color))
                     .foregroundStyle(.orange)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
         }
-        .background(Color.yellow.opacity(0.05))
+        .background(Color.yellow.opacity(0.05) as Color)
     }
 
     // MARK: - Header
@@ -110,7 +110,9 @@ struct PlanPreviewView: View {
         appState.screenPlan.screens.reduce(0) { $0 + $1.heading.split(separator: " ").count }
     }
 
+    @ViewBuilder
     private var header: some View {
+        @Bindable var appState = appState
         HStack {
             if !appState.screenPlan.screens.isEmpty {
                 Button {
@@ -310,7 +312,9 @@ struct PlanPreviewView: View {
 
     // MARK: - Screen Cards
 
+    @ViewBuilder
     private var screenCards: some View {
+        @Bindable var appState = appState
         ScrollView {
             LazyVGrid(columns: [
                 GridItem(.adaptive(minimum: 280, maximum: 400), spacing: 16)
@@ -356,7 +360,16 @@ struct PlanPreviewView: View {
 
     // MARK: - Footer
 
+    /// Total image count based on screen count, variation count, and iPad toggle
+    private var totalImageCount: Int {
+        let screens = appState.screenPlan.screens.count
+        let multiplier = appState.generateIPad ? 2 : 1
+        return screens * appState.variationCount * multiplier
+    }
+
+    @ViewBuilder
     private var footer: some View {
+        @Bindable var appState = appState
         HStack {
             Button("Back") {
                 appState.goToStep(.screenshots)
@@ -364,6 +377,22 @@ struct PlanPreviewView: View {
             .buttonStyle(.bordered)
 
             Spacer()
+
+            // Variation count picker
+            if !appState.screenPlan.screens.isEmpty {
+                HStack(spacing: 6) {
+                    Text("Variations:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $appState.variationCount) {
+                        ForEach(1...6, id: \.self) { n in
+                            Text("\(n)").tag(n)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                }
+            }
 
             // Batch Edit menu
             if !appState.screenPlan.screens.isEmpty {
@@ -391,7 +420,7 @@ struct PlanPreviewView: View {
                 HStack(spacing: 4) {
                     Text("Generate Screenshots")
                     if !appState.screenPlan.screens.isEmpty {
-                        Text("(\(appState.screenPlan.screens.count))")
+                        Text("(\(totalImageCount))")
                             .foregroundStyle(.secondary)
                     }
                 }

@@ -73,6 +73,13 @@ import Observation
     var iPadBackgroundImages: [Int: Data] = [:]
     var iPadComposedImages: [NSImage] = []
 
+    // Variation state
+    var variationCount: Int = 1  // 1-6, UI-controlled
+    var backgroundVariations: [Int: [Int: Data]] = [:]  // screenIndex -> [variationIndex: Data]
+    var iPadBackgroundVariations: [Int: [Int: Data]] = [:]
+    var selectedVariation: [Int: Int] = [:]  // screenIndex -> selected variation index
+    var selectedIPadVariation: [Int: Int] = [:]
+
     // UI State
     var isLoading = false
     var loadingMessage = ""
@@ -122,13 +129,13 @@ import Observation
 
     // MARK: - Settings (persisted)
 
-    @AppStorage("llm_base_url") var llmBaseURL = ""
-    @AppStorage("llm_api_key") var llmAPIKey = ""
-    @AppStorage("llm_model") var llmModel = ""
-    @AppStorage("gemini_base_url") var geminiBaseURL = ""
-    @AppStorage("gemini_api_key") var geminiAPIKey = ""
-    @AppStorage("gemini_model") var geminiModel = ""
-    @AppStorage("last_markdown") var lastMarkdown = ""
+    @ObservationIgnored @AppStorage("llm_base_url") var llmBaseURL = ""
+    @ObservationIgnored @AppStorage("llm_api_key") var llmAPIKey = ""
+    @ObservationIgnored @AppStorage("llm_model") var llmModel = ""
+    @ObservationIgnored @AppStorage("gemini_base_url") var geminiBaseURL = ""
+    @ObservationIgnored @AppStorage("gemini_api_key") var geminiAPIKey = ""
+    @ObservationIgnored @AppStorage("gemini_model") var geminiModel = ""
+    @ObservationIgnored @AppStorage("last_markdown") var lastMarkdown = ""
 
     init() {
         let llm = LLMService()
@@ -269,7 +276,8 @@ import Observation
                 screenPlan = try await planGenerator.generate(
                     descriptor: descriptor,
                     screenshotData: screenshotData,
-                    includeIPad: generateIPad
+                    includeIPad: generateIPad,
+                    variationCount: variationCount
                 )
                 isLoading = false
             } catch {
@@ -304,23 +312,27 @@ import Observation
 
         do {
             // Step A: Build prompts from plan data (no LLM call)
-            imagePrompts = promptTranslator.translate(plan: screenPlan)
+            imagePrompts = promptTranslator.translate(plan: screenPlan, variationCount: variationCount)
 
             // Build iPad prompts if iPad generation is enabled
             var iPadPrompts: [ImagePrompt] = []
             if generateIPad {
-                iPadPrompts = promptTranslator.translateIPad(plan: screenPlan)
+                iPadPrompts = promptTranslator.translateIPad(plan: screenPlan, variationCount: variationCount)
             }
 
-            // Step B: Build screenshot data map (screenIndex -> screenshot data)
+            // Step B: Build screenshot data map (composite index -> screenshot data)
+            // Composite index encoding: screenIndex * 10 + variationIndex
+            // iPad offset: +1000
             var screenshotDataMap: [Int: Data] = [:]
             for screen in screenPlan.screens {
                 if screen.screenshotMatch >= 0 && screen.screenshotMatch < screenshots.count {
                     let ssData = screenshots[screen.screenshotMatch].imageData
-                    screenshotDataMap[screen.index] = ssData
-                    // iPad prompts use offset indices (index + 1000)
-                    if generateIPad {
-                        screenshotDataMap[screen.index + 1000] = ssData
+                    for varIdx in 0..<variationCount {
+                        let compositeIndex = screen.index * 10 + varIdx
+                        screenshotDataMap[compositeIndex] = ssData
+                        if generateIPad {
+                            screenshotDataMap[compositeIndex + 1000] = ssData
+                        }
                     }
                 }
             }
@@ -342,29 +354,85 @@ import Observation
             // so even if the TaskGroup throws (one image fails), we keep partial results.
             var generationError: Error?
             do {
+                let variationCountCapture = self.variationCount
                 let allResults = try await backgroundGenerator.generateAll(
                     prompts: allPrompts,
                     screenshotDataMap: screenshotDataMap
                 ) { [weak self] index, data in
                     Task { @MainActor in
-                        if index >= 1000 {
-                            self?.iPadBackgroundImages[index - 1000] = data
+                        guard let self else { return }
+                        let isIPad = index >= 1000
+                        let rawIndex = isIPad ? index - 1000 : index
+                        let screenIdx = rawIndex / 10
+                        let varIdx = rawIndex % 10
+
+                        if variationCountCapture > 1 {
+                            // Store in variations dictionary
+                            if isIPad {
+                                if self.iPadBackgroundVariations[screenIdx] == nil {
+                                    self.iPadBackgroundVariations[screenIdx] = [:]
+                                }
+                                self.iPadBackgroundVariations[screenIdx]?[varIdx] = data
+                                // Auto-populate primary with variation 0
+                                if varIdx == 0 {
+                                    self.iPadBackgroundImages[screenIdx] = data
+                                }
+                            } else {
+                                if self.backgroundVariations[screenIdx] == nil {
+                                    self.backgroundVariations[screenIdx] = [:]
+                                }
+                                self.backgroundVariations[screenIdx]?[varIdx] = data
+                                // Auto-populate primary with variation 0
+                                if varIdx == 0 {
+                                    self.backgroundImages[screenIdx] = data
+                                }
+                            }
                         } else {
-                            self?.backgroundImages[index] = data
+                            // Single variation — route directly (screenIdx = rawIndex since varIdx=0)
+                            if isIPad {
+                                self.iPadBackgroundImages[screenIdx] = data
+                            } else {
+                                self.backgroundImages[screenIdx] = data
+                            }
                         }
 
-                        let completed = (self?.backgroundImages.count ?? 0) + (self?.iPadBackgroundImages.count ?? 0)
-                        self?.generationProgress = Double(completed) / total
-                        self?.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
+                        let completed = self.backgroundImages.count + self.iPadBackgroundImages.count
+                        self.generationProgress = Double(completed) / total
+                        self.loadingMessage = "Generated \(completed)/\(Int(total)) screenshots"
                     }
                 }
 
                 // Route final results
                 for (index, data) in allResults {
-                    if index >= 1000 {
-                        iPadBackgroundImages[index - 1000] = data
+                    let isIPad = index >= 1000
+                    let rawIndex = isIPad ? index - 1000 : index
+                    let screenIdx = rawIndex / 10
+                    let varIdx = rawIndex % 10
+
+                    if variationCount > 1 {
+                        if isIPad {
+                            if iPadBackgroundVariations[screenIdx] == nil {
+                                iPadBackgroundVariations[screenIdx] = [:]
+                            }
+                            iPadBackgroundVariations[screenIdx]?[varIdx] = data
+                            if varIdx == 0 && iPadBackgroundImages[screenIdx] == nil {
+                                iPadBackgroundImages[screenIdx] = data
+                            }
+                        } else {
+                            if backgroundVariations[screenIdx] == nil {
+                                backgroundVariations[screenIdx] = [:]
+                            }
+                            backgroundVariations[screenIdx]?[varIdx] = data
+                            if varIdx == 0 && backgroundImages[screenIdx] == nil {
+                                backgroundImages[screenIdx] = data
+                            }
+                        }
                     } else {
-                        backgroundImages[index] = data
+                        if isIPad {
+                            iPadBackgroundImages[screenIdx] = data
+                        } else {
+                            backgroundImages[screenIdx] = data
+                        }
                     }
                 }
             } catch {
@@ -393,7 +461,7 @@ import Observation
                     try? await Task.sleep(nanoseconds: 300_000_000)
                     guard !Task.isCancelled else { return }
                     if !self.backgroundImages.isEmpty && self.currentStep == .generating {
-                        self.goToStep(.export)
+                        self.goToStep(.composing)
                     }
                 }
             }
@@ -429,10 +497,34 @@ import Observation
     func resetGeneration() {
         backgroundImages = [:]
         iPadBackgroundImages = [:]
+        backgroundVariations = [:]
+        iPadBackgroundVariations = [:]
+        selectedVariation = [:]
+        selectedIPadVariation = [:]
         composedImages = []
         iPadComposedImages = []
         generationProgress = 0
         retryCount = 0
+    }
+
+    // MARK: - Variation Selection
+
+    /// Selects a specific variation for a screen, updating the primary background image
+    /// and recomposing the output.
+    func selectVariation(screenIndex: Int, variationIndex: Int, deviceType: DeviceType = .iPhone) {
+        if deviceType == .iPad {
+            selectedIPadVariation[screenIndex] = variationIndex
+            if let data = iPadBackgroundVariations[screenIndex]?[variationIndex] {
+                iPadBackgroundImages[screenIndex] = data
+                recomposeSingle(screenIndex: screenIndex, deviceType: .iPad)
+            }
+        } else {
+            selectedVariation[screenIndex] = variationIndex
+            if let data = backgroundVariations[screenIndex]?[variationIndex] {
+                backgroundImages[screenIndex] = data
+                recomposeSingle(screenIndex: screenIndex)
+            }
+        }
     }
 
     // MARK: - Step 5: Compose (Core Graphics, no LLM)
@@ -675,6 +767,10 @@ import Observation
             imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
+            backgroundVariations.removeAll()
+            iPadBackgroundVariations.removeAll()
+            selectedVariation.removeAll()
+            selectedIPadVariation.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
             exportResults.removeAll()
@@ -684,6 +780,10 @@ import Observation
             imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
+            backgroundVariations.removeAll()
+            iPadBackgroundVariations.removeAll()
+            selectedVariation.removeAll()
+            selectedIPadVariation.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
             exportResults.removeAll()
@@ -692,6 +792,10 @@ import Observation
             imagePrompts.removeAll()
             backgroundImages.removeAll()
             iPadBackgroundImages.removeAll()
+            backgroundVariations.removeAll()
+            iPadBackgroundVariations.removeAll()
+            selectedVariation.removeAll()
+            selectedIPadVariation.removeAll()
             composedImages.removeAll()
             iPadComposedImages.removeAll()
             exportResults.removeAll()

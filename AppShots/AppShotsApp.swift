@@ -142,7 +142,7 @@ struct GettingStartedSheet: View {
                 Button {
                     isPresented = false
                 } label: {
-                    Text("\u00d7")
+                    Text("\u{00d7}")
                         .font(.title2)
                         .foregroundStyle(.secondary)
                 }
@@ -157,7 +157,7 @@ struct GettingStartedSheet: View {
                     HStack(alignment: .top, spacing: 12) {
                         Image(systemName: step.icon)
                             .font(.title3)
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                             .frame(width: 32, alignment: .center)
 
                         VStack(alignment: .leading, spacing: 4) {
