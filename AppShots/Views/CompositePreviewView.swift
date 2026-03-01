@@ -27,6 +27,10 @@ struct CompositePreviewView: View {
             footer
         }
         .onAppear {
+            // Remove any stale monitor to prevent duplicates if onAppear fires twice
+            if let monitor = eventMonitor {
+                NSEvent.removeMonitor(monitor)
+            }
             // Set up keyboard monitoring for zoom
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 if event.modifierFlags.contains(.command) {
